@@ -1,0 +1,1 @@
+EXEC xp_logininfo 'SQL2005N2\sqltest'

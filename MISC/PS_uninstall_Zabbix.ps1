@@ -1,0 +1,1 @@
+c:\navi\zabbix\bin\zabbix_agent2.exe -c C:\navi\zabbix\conf\zabbix_agent2.conf --uninstall

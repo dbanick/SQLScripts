@@ -1,0 +1,20 @@
+Grant SQL Server service account [domain\svc_account] permissions in AD.
+Read servicePrincipalName
+Write servicePrincipalName
+
+/* Check for Kerberos or NTLM */
+SELECT auth_scheme
+FROM sys.dm_exec_connections
+WHERE session_id = @@SPID;
+
+
+#Check SPNs#
+setspn -l server
+
+#Remove SPNs#
+setspn -d MSSQLSvc/server.domain.com:1433 server
+setspn -d MSSQLSvc/server.domain.com server
+
+#Add SPNs#
+setspn -s MSSQLSvc/server.domain.com:1433 domain\svc_account
+setspn -s MSSQLSvc/server.domain.com domain\svc_account

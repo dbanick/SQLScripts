@@ -1,0 +1,1 @@
+﻿Get-ChildItem -Path 'C:\Database_Assessment\Database_Assessment_V9\SQL_Scripts\Database_Assessment\*.sql' -Recurse | Select-String -Pattern 'rdx' -SimpleMatch

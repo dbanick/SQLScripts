@@ -1,0 +1,1 @@
+https://docs.microsoft.com/en-us/sql/database-engine/availability-groups/windows/reporting-services-with-always-on-availability-groups-sql-server

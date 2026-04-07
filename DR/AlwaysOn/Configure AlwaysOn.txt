@@ -1,0 +1,1 @@
+https://blogs.technet.microsoft.com/canitpro/2013/08/19/step-by-step-creating-a-sql-server-2012-alwayson-availability-group/

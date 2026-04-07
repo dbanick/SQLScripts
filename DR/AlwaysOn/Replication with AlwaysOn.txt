@@ -1,0 +1,1 @@
+https://blogs.msdn.microsoft.com/alwaysonpro/2014/01/30/setting-up-replication-on-a-database-that-is-part-of-an-alwayson-availability-group/

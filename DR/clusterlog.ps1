@@ -1,0 +1,1 @@
+Get-ClusterLog -Destination . -TimeSpan 45 -UseLocalTime

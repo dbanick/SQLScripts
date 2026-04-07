@@ -1,0 +1,50 @@
+/****** Script for SelectTopNRows command from SSMS  ******/
+
+DECLARE @date datetime
+SET @date = GETDATE()
+DECLARE @lsqsH int, @lsqsL int, @rqsH int, @rqsL int, @ft int, @err int
+
+SET @lsqsH = 15728640 -- 15GB; high value for log send queue
+SET @lsqsL = 10240 -- 10MB; low value for log send queue
+SET @rqsH = 41943040 -- 40GB; high value for redo queue
+SET @rqsL = 10240 -- 10MB; low value for redo queue
+SET @ft = 10 --fault tolerance; how many records have high latency before generating an alert
+SET @err = 0 --initialize error count to 0
+
+-- If during business hours, make sure log send queue rate and redo queue rate is under the lower limit
+IF DATEPART(hour,@date) between 7 and 21
+	BEGIN
+		--If Redo Queue or Log Queue was high for X records out of last 15 minutes, generate alert. Based on @ft
+		IF (SELECT COUNT(1)
+		FROM [master].[dbo].[RDX_AlwaysOnStats]
+		where ([Redo Queue Size] > @rqsL  or [Log Send Queue Size] > @lsqsL)
+		and [Collection Time] > DATEADD(MINUTE, -15, @date) 
+		and [Collection Time] < @date
+		) > @ft
+		BEGIN
+			select 'Over lower limit'
+			SET @err = 1
+		END
+	END
+ELSE -- If after business hours, make sure log send queue rate and redo queue rate is under the higher limit
+	BEGIN
+		--If Redo Queue or Log Queue was high for 10 out of last 15 minutes, generate alert
+		IF (SELECT COUNT(1)
+		FROM [master].[dbo].[RDX_AlwaysOnStats]
+		where ([Redo Queue Size] > @rqsH  or [Log Send Queue Size] > @lsqsH)
+		and [Collection Time] > DATEADD(MINUTE, -15, @date) 
+		and [Collection Time] < @date
+		) > @ft
+		BEGIN
+			select 'Over higher limit'
+			SET @err = 1
+		END
+	END
+
+
+-- cleanup old records in table
+delete from [dbo].[RDX_AlwaysOnStats] where [Collection Time] < @date-7
+
+--select @err
+IF @err > 0
+SELECT * from foo

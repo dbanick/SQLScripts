@@ -1,0 +1,34 @@
+$AGL = "AGL_csaprodnoms"
+$zone = "reicorpnet.com"
+$query = "SELECT 
+    l.dns_name       AS listener_name,
+    ip.ip_address,
+    ip.state_desc    AS ip_state,
+    ip.state
+FROM sys.availability_group_listener_ip_addresses AS ip
+JOIN sys.availability_group_listeners AS l
+    ON ip.listener_id = l.listener_id
+WHERE l.dns_name = '$AGL'
+ORDER BY l.listener_id
+"
+
+  $offlineIP = Invoke-Sqlcmd -ServerInstance $AGL -Query $query | where-object {$_.state -eq 0} | select-object ip_address
+  $onlineIP = Invoke-Sqlcmd -ServerInstance $AGL -Query $query | where-object {$_.state -eq 1} | select-object ip_address
+  write-host "offline: $($offlineIP)"
+  write-host "online: $($onlineIP)"
+
+
+
+    $registeredIP = Resolve-DnsName $AGL | select-object IPAddress
+  #$registeredIP
+ 
+  if ($offlineIP -eq $registeredIP) { 
+    write-host "the offline IP of *  $($offlineIP) * is resolving for the $AGL listener. It should be using IP * $($offlineIP) *"
+    #do stuff
+    #Remove-DnsServerResourceRecord -ZoneName $zone -RRType "A" -Name $AGL -RecordData $offlineIP
+      write-host "Remove-DnsServerResourceRecord -ZoneName $zone -Name $AGL -RecordData $offlineIP"
+    } else {
+    Write-Host "The $AGL listener is correctly using IP * $($onlineIP) *"
+    #do nothing
+    }
+ 

@@ -1,0 +1,40 @@
+/****** Object:  Table [dbo].[RDX_DB_Growth_Stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_DB_Growth_Stats](
+	[ServerName] [sysname] NOT NULL,
+	[RunDate] [datetime] NOT NULL,
+	[DBName] [sysname] NOT NULL,
+	[Name] [sysname] NOT NULL,
+	[FileName] [nchar](520) NOT NULL,
+	[TotalSize] [float] NOT NULL,
+	[UsedSpace] [float] NOT NULL,
+	[FreeSpace] [float] NOT NULL,
+	[FileID] [int] NOT NULL
+) ON [PRIMARY]
+
+GO
+
+/****** Object:  Table [dbo].[RDX_Drive_Growth_Stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+SET ANSI_PADDING ON
+GO
+
+CREATE TABLE [dbo].[RDX_Drive_Growth_Stats](
+	[ServerName] [sysname] NOT NULL,
+	[Drive] [char](3) NULL,
+	[TotalSpaceInGB] [numeric](6, 2) NULL,
+	[FreeSpaceInGB] [numeric](6, 2) NULL,
+	[RunDate] [datetime] NULL CONSTRAINT [DF_DriveSpace_RunDate]  DEFAULT (getdate())
+) ON [PRIMARY]
+
+GO

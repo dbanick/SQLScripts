@@ -1,0 +1,117 @@
+--Rollup stats - to hour
+
+--User Connections
+insert into master..[RDX_Stats_Summary]
+select 'GEN: User Connections',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = 'User_Connections'
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+
+-----------------------------
+--Logical Connections
+insert into master..[RDX_Stats_Summary]
+select 'GEN: Logical Connections',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = 'Logical_Connections'
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--Network - MB per sec sent
+insert into master..[RDX_Stats_Summary]
+select 'NET: Network - MB Sent Per Second',
+NULL as MetricValue_Total,
+AVG(a.value)/1000000 as MetricValue_AVG, 
+MAX(a.value)/1000000 as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = 'NET_bytes_sent'
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--Network - MB per sec received
+insert into master..[RDX_Stats_Summary]
+select 'NET: Network - MB Received Per Second',
+NULL as MetricValue_Total,
+AVG(a.value)/1000000 as MetricValue_AVG, 
+MAX(a.value)/1000000 as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = 'NET_bytes_rec'
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+
+--PLE usage
+insert into master..[RDX_Stats_Summary]
+select 'MEM: Page Life Expectancy (PLE)',
+NULL as MetricValue_Total,
+AVG(a.[PLE]) as MetricValue_AVG, 
+MAX(a.[PLE]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PLE_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--memory usage
+insert into master..[RDX_Stats_Summary]
+select 'MEM: Available Memory (MB)',
+NULL as MetricValue_Total,
+AVG(a.[Available Memory (MB)]) as MetricValue_AVG, 
+MAX(a.[Available Memory (MB)]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_MEM_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--sql cpu usage
+insert into master..[RDX_Stats_Summary]
+select 'CPU: SQL CPU Utilization (%)',
+NULL as MetricValue_Total,
+AVG(a.SQL_Utilization) as MetricValue_AVG, 
+MAX(a.SQL_Utilization) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--idle cpu usage
+insert into master..[RDX_Stats_Summary]
+select 'CPU: Idle CPU Utilization (%)',
+NULL as MetricValue_Total,
+AVG(a.System_Idle) as MetricValue_AVG, 
+MAX(a.System_Idle) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--non SQL CPU usage
+insert into master..[RDX_Stats_Summary]
+select 'CPU: Other Proceses CPU Utilization (%)',
+NULL as MetricValue_Total,
+AVG(a.Other_Process_Utilization) as MetricValue_AVG, 
+MAX(a.Other_Process_Utilization) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--Interrupts / sec
+insert into master..[RDX_Stats_Summary]
+select 'CPU: Interrupts Per Second',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = 'Interrupts_sec'
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------

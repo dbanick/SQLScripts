@@ -1,0 +1,12 @@
+truncate table [RDX_IO_Latency] 
+truncate table [RDX_CPU_Stats] 
+truncate table [RDX_MEM_Stats] 
+truncate table [RDX_PLE_Stats] 
+
+
+truncate table [RDX_IO_Stats_2]
+truncate table [RDX_IO_Stats]
+truncate table [RDX_Wait_Stats] 
+truncate table [RDX_lock_wait_Stats]
+
+truncate table [RDX_PS_stats]

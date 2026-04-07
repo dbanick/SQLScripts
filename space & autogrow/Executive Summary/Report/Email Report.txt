@@ -1,0 +1,307 @@
+DECLARE @html nvarchar(max);
+DECLARE @subject nvarchar(200);
+DECLARE @recipients nvarchar(2000);
+DECLARE @profile nvarchar(200);
+DECLARE @historyCheck int;
+DECLARE @retention int;
+DECLARE @errors int;
+declare @tableHTML nvarchar(max); 
+
+
+--You can set the email to use the addresses from an Operator, or explicitly define the email address
+--SET @recipients = (select email_address from msdb.dbo.sysoperators where name = 'Server_Reports') --uses the Server_Reports operator
+SET @recipients = 'npatti@rdx.com'; --seperate emails with semicolon
+
+SET @subject = 'PS2 - Daily Executive Summary'; --subject of email
+SET @profile = 'PS_Reports'; --mail profile to use
+SET @retention = -365 -- how many days of history to keep
+
+
+create table #report(
+Metric varchar(250),
+Total dec(18,2),
+Average dec(18,2),
+Peak dec(18,2),
+PeakTime varchar(100)
+);
+
+with CTE_peaktime AS(
+select Metric, EventTime_Hour,
+Row_number() over (Partition by Metric order by MetricValue_Peak desc, EventTime_Hour asc) as row_num
+from [master].[dbo].[RDX_Stats_Summary]
+where EventTime_Day = DATEPART(dd, GETDATE())
+), 
+CTE_stats AS(
+select Metric, EventTime_Day, 
+SUM(metricValue_Total) as [Total],
+cast(AVG(metricValue_AVG) as dec(18,2)) as [AVG], 
+MAX(MetricValue_Peak) as [Peak] 
+from [master].[dbo].[RDX_Stats_Summary] 
+where EventTime_Day = DATEPART(dd, GETDATE())
+group by Metric, EventTime_Day
+)
+
+insert into #report	
+select 
+a.metric,
+a.total,
+a.[AVG],
+a.Peak,
+cast(CONVERT(date, GETDATE()) as varchar) + ' ' +  cast(b.EventTime_Hour as varchar) + ':00' as PeakTime
+from CTE_stats a
+join CTE_peaktime b
+on a.metric = b.metric
+where b.row_num = 1
+order by Metric asc
+
+create table #report_h(
+Metric varchar(250),
+EventTime varchar(100),
+Total dec(18,2),
+Average dec(18,2),
+Peak dec(18,2)
+);
+WITH CTE_hourly AS(
+select Metric, 
+cast(CONVERT(date, GETDATE()) as varchar) + ' ' +  cast(EventTime_Hour as varchar) + ':00' as EventTime,
+metricValue_Total as [Total],
+cast(metricValue_AVG as dec(18,2)) as [AVG], 
+MetricValue_Peak as [Peak] 
+from [master].[dbo].[RDX_Stats_Summary] 
+where EventTime_Day = DATEPART(dd, GETDATE())
+and Metric like 'IO%'
+)
+insert into #report_h	
+select 
+a.metric,
+a.EventTime,
+a.total,
+a.[AVG],
+a.Peak
+from CTE_hourly a
+order by Metric asc
+
+--build HTML report
+
+ --CPU & Memory
+set @tableHTML = 
+	N'<h2>PS2 - Executive Summary Report </h2>
+	<br />
+	<br /> 
+	<h2>General Summary </h2>' + 
+	N'<table border="1">' + 
+	N'<tr><th><p align="center"><b>Metric</b></p></th> 
+	<th><p align="center"><b>Total</b></p></th>
+	<th><p align="center"><b>Average</b></p></th> 
+	<th><p align="center"><b>Peak</b></p></th>
+	<th><p align="center"><b>Time of Peak Activity</b></p></th>
+	</tr>' + 
+	CAST ((    
+	select 
+	td = metric,' ',
+	td = coalesce(cast(Total as varchar(25)), ''), ' ',
+	td = Average,' ',
+	td = Peak,' ',
+	td = PeakTime , ' '
+	from #report
+	where Metric like 'MEM%' or Metric like 'CPU%'  or Metric like 'GEN%' or Metric like 'NET%' or Metric = 'IO: Page Splits Per Second'
+	for xml path('tr'), type  
+	) as nvarchar(max)) + 
+	N'</table>' ; 
+
+--IO Summary
+set @tableHTML = @tableHTML + N'
+	<br />
+	<br /> ' +
+	N'<h2>IO Summary </h2>' + 
+	N'<table border="1">' + 
+	N'<tr><th><p align="center"><b>Drive</b></p></th> 	
+	<th><p align="center"><b>Total IO</b></p></th>
+	<th><p align="center"><b>Reads</b></p></th>
+	<th><p align="center"><b>Writes</b></p></th>
+	<th><p align="center"><b>Reads MB</b></p></th>
+	<th><p align="center"><b>Writes MB</b></p></th>
+	<th><p align="center"><b>Total MB</b></p></th>
+	<th><p align="center"><b>Read Latency</b></p></th>
+	<th><p align="center"><b>Write Latency</b></p></th>
+	<th><p align="center"><b>Total IO Read Stalls (in ms)</b></p></th>
+	<th><p align="center"><b>Total IO Write Stalls (in ms)</b></p></th>
+	<th><p align="center"><b>Time of Peak IO Activity</b></p></th>
+	</tr>' + 
+	CAST ((    
+	select  
+	td = right(r1.Metric, 2),' ', 
+	td = r1.Total,' ',
+	td = r2.Total,' ',
+	td = r3.Total,' ',
+	td = r4.Total,' ',
+	td = r5.Total,' ',
+	td = r6.Total,' ',
+	td = r7.Average,' ',
+	td = r8.Average,' ',
+	td = r9.Total,' ',
+	td = r10.Total,' ',
+	td = r1.PeakTime,' '
+	from #report r1
+	join #report r2 on right(r1.Metric, 2) = right(r2.Metric, 2)
+	join #report r3 on right(r1.Metric, 2) = right(r3.Metric, 2)
+	join #report r4 on right(r1.Metric, 2) = right(r4.Metric, 2)
+	join #report r5 on right(r1.Metric, 2) = right(r5.Metric, 2)
+	join #report r6 on right(r1.Metric, 2) = right(r6.Metric, 2)
+	join #report r7 on right(r1.Metric, 2) = right(r7.Metric, 2)
+	join #report r8 on right(r1.Metric, 2) = right(r8.Metric, 2)
+	join #report r9 on right(r1.Metric, 2) = right(r9.Metric, 2)
+	join #report r10 on right(r1.Metric, 2) = right(r10.Metric, 2)
+	where r1.Metric like 'IO: Total IO - %'
+	and r2.Metric like 'IO: Total Number of Reads -%'
+	and r3.Metric like 'IO: Total Number of Writes -%'
+	and r4.Metric like 'IO: Total MB Read -%'
+	and r5.Metric like 'IO: Total MB Written -%'
+	and r6.Metric like 'IO: Total MB Reads & Writes -%'
+	and r7.Metric like 'IO: Read Latency -%'
+	and r8.Metric like 'IO: Write Latency -%'
+	and r9.Metric like 'IO: Total IO Read Stalls (ms) -%'
+	and r10.Metric like 'IO: Total IO Write Stalls (ms) -%'
+	for xml path('tr'), type  
+	) as nvarchar(max)) + 
+	N'</table>' ; 
+
+
+--wait types
+set @tableHTML = @tableHTML + N'
+	<br />
+	<br /> ' +
+	N'<h2>Wait Types Summary </h2>' + 
+	N'<table border="1">' + 
+	N'<tr><th><p align="center"><b>Wait Type</b></p></th> 	
+	<th><p align="center"><b>Number of Waits</b></p></th>
+	<th><p align="center"><b>Total Time Waiting (seconds)</b></p></th>
+	<th><p align="center"><b>Average Time Per Wait (ms)</b></p></th>
+	<th><p align="center"><b>Time of Peak Activity</b></p></th>
+	</tr>' + 
+	CAST ((    
+	select  
+	td = Substring(r1.Metric, 12, LEN(r1.Metric)-CHARINDEX('(', REVERSE(r1.Metric))-12),' ', 
+	td = r1.Total,' ',
+	td = r2.Total,' ',
+	td = cast(cast ((r2.Total/r1.Total)*1000 as dec(18,6)) as varchar),' ',
+	td = r1.PeakTime,' '
+	from #report r1
+	join #report r2 on Substring(r1.Metric, 12, LEN(r1.Metric)-CHARINDEX('(', REVERSE(r1.Metric))-12) = Substring(r2.Metric, 12, LEN(r2.Metric)-CHARINDEX('(', REVERSE(r2.Metric))-12)
+	where r1.Metric like 'WaitType -%'
+	and r1.Metric like '%(wait count)'
+	and r2.Metric like '%(wait in sec)'
+	and r1.Total != 0 and r2.Total != 0
+	for xml path('tr'), type  
+	) as nvarchar(max)) + 
+	N'</table>' ; 
+
+--Lock Waits
+set @tableHTML = @tableHTML + N'
+	<br />
+	<br /> ' +
+	N'<h2>Lock Wait Summary </h2>' + 
+	N'<table border="1">' + 
+	N'<tr><th><p align="center"><b>Lock Wait Type</b></p></th> 	
+	<th><p align="center"><b>Number of Lock Waits</b></p></th>
+	<th><p align="center"><b>Total Time Waiting (ms)</b></p></th>
+	<th><p align="center"><b>Average Time Per Wait (ms)</b></p></th>
+	<th><p align="center"><b>Time of Peak Activity</b></p></th>
+	</tr>' + 
+	CAST ((    
+	select 
+	td = Substring(r1.Metric, 7, LEN(r1.Metric)-CHARINDEX('(', REVERSE(r1.Metric))-7),' ',
+	td = r1.Total,' ', 
+	td = r2.Total,' ',
+	td = cast(cast ((r2.Total/r1.Total) as dec(18,3))as varchar),' ',
+	td = r1.PeakTime,' '
+	from #report r1
+	join #report r2 on Substring(r1.Metric, 7, LEN(r1.Metric)-CHARINDEX('(', REVERSE(r1.Metric))-7) = Substring(r2.Metric, 7, LEN(r2.Metric)-CHARINDEX('(', REVERSE(r2.Metric))-7)
+	where r1.Metric like 'Wait:%'
+	and r1.Metric like '%(#)%'
+	and r2.Metric like '%(ms)%'
+	and r1.Total != 0 and r2.Total != 0
+	for xml path('tr'), type  
+	) as nvarchar(max)) + 
+	N'</table>' ; 
+
+--IO By the Hour
+set @tableHTML = @tableHTML + N'
+	<br />
+	<br /> ' +
+	N'<h2>IO Stats By The Hour </h2>' + 
+	N'<table border="1">' + 
+	N'<tr><th><p align="center"><b>Drive</b></p></th> 	
+	<th><p align="center"><b>Event Time</b></p></th>
+	<th><p align="center"><b>Total IO</b></p></th>
+	<th><p align="center"><b>Reads</b></p></th>
+	<th><p align="center"><b>Writes</b></p></th>
+	<th><p align="center"><b>Reads MB</b></p></th>
+	<th><p align="center"><b>Writes MB</b></p></th>
+	<th><p align="center"><b>Total MB</b></p></th>
+	<th><p align="center"><b>Read Latency</b></p></th>
+	<th><p align="center"><b>Write Latency</b></p></th>
+	<th><p align="center"><b>Total IO Read Stalls (in ms)</b></p></th>
+	<th><p align="center"><b>Total IO Write Stalls (in ms)</b></p></th>
+	</tr>' + 
+	CAST ((    
+	select 
+	td = right(r1.Metric, 2),' ', 
+	td = r1.EventTime, ' ',
+	td = r1.Total,' ',
+	td = r2.Total,' ',
+	td = r3.Total,' ',
+	td = r4.Total,' ',
+	td = r5.Total,' ',
+	td = r6.Total,' ',
+	td = r7.Average,' ',
+	td = r8.Average,' ',
+	td = r9.Total,' ',
+	td = r10.Total,' '
+	from #report_h r1
+	join #report_h r2 on right(r1.Metric, 2) = right(r2.Metric, 2) and r1.EventTime = r2.EventTime
+	join #report_h r3 on right(r1.Metric, 2) = right(r3.Metric, 2) and r1.EventTime = r3.EventTime
+	join #report_h r4 on right(r1.Metric, 2) = right(r4.Metric, 2) and r1.EventTime = r4.EventTime
+	join #report_h r5 on right(r1.Metric, 2) = right(r5.Metric, 2) and r1.EventTime = r5.EventTime
+	join #report_h r6 on right(r1.Metric, 2) = right(r6.Metric, 2) and r1.EventTime = r6.EventTime
+	join #report_h r7 on right(r1.Metric, 2) = right(r7.Metric, 2) and r1.EventTime = r7.EventTime
+	join #report_h r8 on right(r1.Metric, 2) = right(r8.Metric, 2) and r1.EventTime = r8.EventTime
+	join #report_h r9 on right(r1.Metric, 2) = right(r9.Metric, 2) and r1.EventTime = r9.EventTime
+	join #report_h r10 on right(r1.Metric, 2) = right(r10.Metric, 2) and r1.EventTime = r10.EventTime
+	where r1.Metric like 'IO: Total IO - %'
+	and r2.Metric like 'IO: Total Number of Reads -%'
+	and r3.Metric like 'IO: Total Number of Writes -%'
+	and r4.Metric like 'IO: Total MB Read -%'
+	and r5.Metric like 'IO: Total MB Written -%'
+	and r6.Metric like 'IO: Total MB Reads & Writes -%'
+	and r7.Metric like 'IO: Read Latency -%'
+	and r8.Metric like 'IO: Write Latency -%'
+	and r9.Metric like 'IO: Total IO Read Stalls (ms) -%'
+	and r10.Metric like 'IO: Total IO Write Stalls (ms) -%'
+	order by 1, 2
+	for xml path('tr'), type  
+	) as nvarchar(max)) + 
+	N'</table>' ; 	
+
+
+
+		--send the email
+		EXEC msdb.dbo.sp_send_dbmail
+			@profile_name = @profile,
+			@recipients = @recipients,
+			@subject = @subject,
+			@body = @tableHTML,
+			@body_format = 'HTML',
+			@query_no_truncate = 1,
+			@attach_query_result_as_file = 0;
+	
+
+--Cleanup the summary table of any old rows that had already been emailed, based on the retention setting
+DELETE FROM master.dbo.[RDX_Stats_Summary] where Loadtime < DATEADD(DAY, @retention, GETDATE())
+		
+GO
+
+drop table #report
+drop table #report_h
+
+go

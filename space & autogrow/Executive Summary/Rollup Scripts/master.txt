@@ -1,0 +1,427 @@
+--Rollup queries - to hour
+
+--Interrupts / sec
+insert into master..[RDX_Stats_Summary]
+select 'CPU: Interrupts Per Second',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = 'Interrupts_sec'
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--User Connections
+insert into master..[RDX_Stats_Summary]
+select 'GEN: User Connections',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = 'User_Connections'
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--User Connections
+insert into master..[RDX_Stats_Summary]
+select 'IO: Page Splits Per Second',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = 'PageSplits_sec'
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--PLE usage
+insert into master..[RDX_Stats_Summary]
+select 'MEM: Page Life Expectancy (PLE)',
+NULL as MetricValue_Total,
+AVG(a.[PLE]) as MetricValue_AVG, 
+MAX(a.[PLE]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PLE_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--memory usage
+insert into master..[RDX_Stats_Summary]
+select 'MEM: Available Memory (MB)',
+NULL as MetricValue_Total,
+AVG(a.[Available Memory (MB)]) as MetricValue_AVG, 
+MAX(a.[Available Memory (MB)]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_MEM_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--sql cpu usage
+insert into master..[RDX_Stats_Summary]
+select 'CPU: SQL CPU Utilization (%)',
+NULL as MetricValue_Total,
+AVG(a.SQL_Utilization) as MetricValue_AVG, 
+MAX(a.SQL_Utilization) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--idle cpu usage
+insert into master..[RDX_Stats_Summary]
+select 'CPU: Idle CPU Utilization (%)',
+NULL as MetricValue_Total,
+AVG(a.System_Idle) as MetricValue_AVG, 
+MAX(a.System_Idle) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--non SQL CPU usage
+insert into master..[RDX_Stats_Summary]
+select 'CPU: Other Proceses CPU Utilization (%)',
+NULL as MetricValue_Total,
+AVG(a.Other_Process_Utilization) as MetricValue_AVG, 
+MAX(a.Other_Process_Utilization) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+
+
+--io and stalls
+create table #io_stalls
+(drive varchar(5), 
+io_stall_read_ms_per_hour bigint,
+total_num_reads bigint,
+total_io_stall_write_ms bigint,
+total_num_writes bigint,
+total_io bigint,
+EventTime_day int,
+EventTime_hour int
+);
+with CTE as (select substring([physical_name],0,3) as drive, SUM(io_stall_read_ms) as total_io_stall_read_ms, 
+SUM(num_of_reads) as total_num_reads, SUM(io_stall_write_ms) as total_io_stall_write_ms, SUM(num_of_writes) as total_num_writes, 
+SUM(total_io) as total_io, EventTime_Day, EventTime_Hour
+from RDX_IO_Stats_2
+group by substring([physical_name],0,3), EventTime_Day, EventTime_Hour
+)
+insert into #io_stalls
+select a.drive, 
+a.total_io_stall_read_ms - b.total_io_stall_read_ms as io_stall_read_ms_per_hour, 
+a.total_num_reads - b.total_num_reads as total_num_reads,
+a.total_io_stall_write_ms - b.total_io_stall_write_ms as total_io_stall_write_ms,
+a.total_num_writes - b.total_num_writes as total_num_writes,
+a.total_io - b.total_io as total_io,
+a.EventTime_Day, a.EventTime_Hour
+from CTE as a
+inner join CTE as b
+on a.drive = b.drive and a.EventTime_Day = b.EventTime_Day and a.EventTime_hour -1 = b.EventTime_Hour
+
+--select * from #io_stalls
+
+insert into master..[RDX_Stats_Summary]
+select 'IO: Total IO Read Stalls (ms) - ' + drive,
+SUM(io_stall_read_ms_per_hour) as MetricValue_Total,
+AVG(io_stall_read_ms_per_hour) as MetricValue_AVG, 
+MAX(io_stall_read_ms_per_hour) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'IO: Total Number of Reads - ' + drive,
+SUM(total_num_reads) as MetricValue_Total,
+AVG(total_num_reads) as MetricValue_AVG, 
+MAX(total_num_reads) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+
+insert into master..[RDX_Stats_Summary]
+select 'IO: Total IO Write Stalls (ms) - ' + drive,
+SUM(total_io_stall_write_ms) as MetricValue_Total,
+AVG(total_io_stall_write_ms) as MetricValue_AVG, 
+MAX(total_io_stall_write_ms) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'IO: Total Number of Writes - ' + drive,
+SUM(total_num_writes) as MetricValue_Total,
+AVG(total_num_writes) as MetricValue_AVG, 
+MAX(total_num_writes) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'IO: Total IO - ' + drive,
+SUM(total_io) as MetricValue_Total,
+AVG(total_io) as MetricValue_AVG, 
+MAX(total_io) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+
+drop table #io_stalls
+-----------------------------
+
+
+
+
+
+--MB read/ write
+--insert to temp table then load to summary table
+create table #io_MB
+(drive varchar(5), 
+total_MB_read dec(10,2),
+total_MB_written dec(10,2),
+total_MB_RW dec(10,2),
+EventTime_day int,
+EventTime_hour int
+);
+with CTE as (select substring([physical name],0,3) as drive, SUM([MB Read]) as total_MB_Read, 
+SUM([MB Written]) as total_MB_Written, SUM([MB Read] + [MB Written]) as total_MB_RW, 
+EventTime_Day, EventTime_Hour
+from RDX_IO_Stats
+group by substring([physical name],0,3), EventTime_Day, EventTime_Hour
+)
+insert into #io_MB
+select a.drive, 
+a.total_MB_Read - b.total_MB_Read as total_MB_Read, 
+a.total_MB_Written - b.total_MB_Written as total_MB_Written,
+a.total_MB_RW - b.total_MB_RW as total_MB_RW,
+a.EventTime_Day, a.EventTime_Hour
+from CTE as a
+inner join CTE as b
+on a.drive = b.drive and a.EventTime_Day = b.EventTime_Day and a.EventTime_hour -1 = b.EventTime_Hour
+
+--select * from #io_MB
+
+insert into master..[RDX_Stats_Summary]
+select 'IO: Total MB Read - ' + drive,
+SUM(total_MB_read) as MetricValue_Total,
+AVG(total_MB_read) as MetricValue_AVG, 
+MAX(total_MB_read) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_MB
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'IO: Total MB Written - ' + drive,
+SUM(total_MB_written) as MetricValue_Total,
+AVG(total_MB_written) as MetricValue_AVG, 
+MAX(total_MB_written) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_MB
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+
+insert into master..[RDX_Stats_Summary]
+select 'IO: Total MB Reads & Writes - ' + drive,
+SUM(total_MB_RW) as MetricValue_Total,
+AVG(total_MB_RW) as MetricValue_AVG, 
+MAX(total_MB_RW) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_MB
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+drop table #io_mb
+-----------------------------
+
+
+--IO latency
+insert into master..[RDX_Stats_Summary]
+select 'IO: Read Latency - ' + a.drive,
+NULL as MetricValue_Total,
+AVG(a.[Read Latency]) as MetricValue_AVG, 
+MAX(a.[Read Latency]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_IO_Latency] a
+GROUP BY a.drive, a.[EventTime_Day], a.[EventTime_Hour]
+--
+insert into master..[RDX_Stats_Summary]
+select 'IO: Write Latency - ' + a.drive,
+NULL as MetricValue_Total,
+AVG(a.[Write Latency]) as MetricValue_AVG, 
+MAX(a.[Write Latency]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_IO_Latency] a
+GROUP BY a.drive, a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--wait stats
+create table #wait_stats
+(waittype varchar(150), 
+wait_sec dec(10,2),
+resource_sec dec(10,2),
+signal_sec dec(10,2),
+wait_count bigint,
+EventTime_day int,
+EventTime_hour int
+);
+insert into #wait_stats
+select a.WaitType, 
+a.Wait_Sec - b.Wait_Sec as Wait_Sec, 
+a.Resource_sec - b.Resource_sec as Resource_sec,
+a.Signal_Sec - b.Signal_Sec as Signal_Sec,
+a.[Wait Count] - b.[Wait Count] as [Wait_Count],
+a.EventTime_Day, a.EventTime_Hour
+from [RDX_Wait_Stats] as a
+inner join [RDX_Wait_Stats] as b
+on a.WaitType = b.WaitType and a.EventTime_Day = b.EventTime_Day and a.EventTime_hour -1 = b.EventTime_Hour
+
+--select * from #wait_stats
+
+insert into master..[RDX_Stats_Summary]
+select 'WaitType - ' + waittype + ' (wait in sec)',
+SUM(wait_sec) as MetricValue_Total,
+AVG(wait_sec) as MetricValue_AVG, 
+MAX(wait_sec) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WaitType - ' + waittype + ' (resource sec)',
+SUM(resource_sec) as MetricValue_Total,
+AVG(resource_sec) as MetricValue_AVG, 
+MAX(resource_sec) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WaitType - ' + waittype + ' (signal sec)',
+SUM(signal_sec) as MetricValue_Total,
+AVG(signal_sec) as MetricValue_AVG, 
+MAX(signal_sec) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WaitType - ' + waittype + ' (wait count)',
+SUM(wait_count) as MetricValue_Total,
+AVG(wait_count) as MetricValue_AVG, 
+MAX(wait_count) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+drop table #wait_stats
+-----------------------------
+
+
+--lock waits
+create table #lock_waits
+(database_name varchar(150), 
+[total_row_lock_waits] bigint,
+[total_row_lock_waits_in_ms] bigint,
+[total_page_lock_waits] bigint,
+[total_page_lock_wait_in_ms] bigint,
+[total_page_io_latch_lock_waits] bigint,
+[total_page_io_latch_lock_wait_in_ms] bigint,
+[total_lock_wait_in_ms] bigint,
+EventTime_day int,
+EventTime_hour int
+);
+with CTE as (
+select database_name, SUM([total_row_lock_waits]) as [total_row_lock_waits], 
+SUM([total_row_lock_wait_in_ms]) as [total_row_lock_waits_in_ms],
+SUM([total_page_lock_waits]) as [total_page_lock_waits],
+SUM([total_page_lock_wait_in_ms]) as [total_page_lock_wait_in_ms],
+SUM([total_page_io_latch_lock_waits]) as [total_page_io_latch_lock_waits],
+SUM([total_page_io_latch_lock_wait_in_ms]) as [total_page_io_latch_lock_wait_in_ms],
+SUM([total_lock_wait_in_ms]) as [total_lock_wait_in_ms],
+EventTime_Day, EventTime_Hour
+from [dbo].[RDX_lock_wait_stats]
+group by database_name, EventTime_Day, EventTime_Hour
+)
+insert into #lock_waits
+select a.database_name, 
+a.[total_row_lock_waits] - b.[total_row_lock_waits] as [total_row_lock_waits], 
+a.[total_row_lock_waits_in_ms] - b.[total_row_lock_waits_in_ms] as [total_row_lock_waits_in_ms],
+a.[total_page_lock_waits] - b.[total_page_lock_waits] as [total_page_lock_waits],
+a.[total_page_lock_wait_in_ms] - b.[total_page_lock_wait_in_ms] as [total_page_lock_wait_in_ms],
+a.[total_page_io_latch_lock_waits] - b.[total_page_io_latch_lock_waits] as [total_page_io_latch_lock_waits],
+a.[total_page_io_latch_lock_wait_in_ms] - b.[total_page_io_latch_lock_wait_in_ms] as [total_page_io_latch_lock_wait_in_ms],
+a.[total_lock_wait_in_ms] - b.[total_lock_wait_in_ms] as [total_lock_wait_in_ms],
+a.EventTime_Day, a.EventTime_Hour 
+from CTE as a
+inner join CTE as b
+on a.database_name = b.database_name and a.EventTime_Day = b.EventTime_Day and a.EventTime_hour -1 = b.EventTime_Hour
+
+
+insert into master..[RDX_Stats_Summary]
+select 'WAIT: Row Lock Waits (#) - ' + database_name,
+SUM([total_row_lock_waits]) as MetricValue_Total,
+AVG([total_row_lock_waits]) as MetricValue_AVG, 
+MAX([total_row_lock_waits]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WAIT: Row Lock Waits (ms) - ' + database_name,
+SUM([total_row_lock_waits_in_ms]) as MetricValue_Total,
+AVG([total_row_lock_waits_in_ms]) as MetricValue_AVG, 
+MAX([total_row_lock_waits_in_ms]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WAIT: Page Lock Waits (#) - ' + database_name,
+SUM([total_page_lock_waits]) as MetricValue_Total,
+AVG([total_page_lock_waits]) as MetricValue_AVG, 
+MAX([total_page_lock_waits]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WAIT: Page Lock Waits (ms) - ' + database_name,
+SUM([total_page_lock_wait_in_ms]) as MetricValue_Total,
+AVG([total_page_lock_wait_in_ms]) as MetricValue_AVG, 
+MAX([total_page_lock_wait_in_ms]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WAIT: Page IO Latch Lock Waits (#) - ' + database_name,
+SUM([total_page_io_latch_lock_waits]) as MetricValue_Total,
+AVG([total_page_io_latch_lock_waits]) as MetricValue_AVG, 
+MAX([total_page_io_latch_lock_waits]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WAIT: Page IO Latch Lock Waits (ms) - ' + database_name,
+SUM([total_page_io_latch_lock_wait_in_ms]) as MetricValue_Total,
+AVG([total_page_io_latch_lock_wait_in_ms]) as MetricValue_AVG, 
+MAX([total_page_io_latch_lock_wait_in_ms]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select 'WAIT: Total Lock Waits (ms) - ' + database_name,
+SUM([total_lock_wait_in_ms]) as MetricValue_Total,
+AVG([total_lock_wait_in_ms]) as MetricValue_AVG, 
+MAX([total_lock_wait_in_ms]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+drop table #lock_waits

@@ -1,0 +1,24 @@
+$ctr = Get-Counter -Counter "\\ps2\sqlserver:access methods\page splits/sec" -sampleinterval 10
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select 'PageSplits_sec' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+$ctr = Get-Counter -Counter "\Processor(_total)\interrupts/sec" -sampleinterval 5
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select 'Interrupts_sec' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+
+$ctr = Get-Counter -Counter "\SQLServer:General Statistics\User Connections" -sampleinterval 1
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select 'User_Connections' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+$ctr = Get-Counter -Counter "\SQLServer:General Statistics\Logical Connections" -sampleinterval 1
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select 'Logical_Connections' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+$ctr = Get-Counter -Counter "\Network Interface(vmxnet3 ethernet adapter)\bytes received/sec" -sampleinterval 1
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select 'NET_bytes_rec' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+$ctr = Get-Counter -Counter "\Network Interface(vmxnet3 ethernet adapter)\bytes sent/sec" -sampleinterval 1
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select 'NET_bytes_sent' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"

@@ -1,0 +1,1 @@
+put Powershell folder in C:\RDX\ otherwise, update all scripts as needed to use new location

@@ -1,0 +1,1348 @@
+--be sure to change the email information (profile, who it sends to, etc.) 
+--also some quieries need to be adjusted (Powershell counters, IO counters looking at specific Database)
+
+USE [msdb]
+GO
+
+/****** Object:  Job [_RDX_Collect_Stats_15min]    Script Date: 2/15/2017 1:19:43 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Data Collector]    Script Date: 2/15/2017 1:19:44 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Data Collector' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Data Collector'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'_RDX_Collect_Stats_15min', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'Data Collector', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Collect PLE stats]    Script Date: 2/15/2017 1:19:45 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Collect PLE stats', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=3, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'insert into [RDX_PLE_Stats]
+SELECT cntr_value AS [Page Life Expectancy],
+GETDATE() as EventTime,
+DATEPART(dd, GETDATE()) as EventTime_Day,
+DATEPART(hh, GETDATE()) as EventTime_Hour
+FROM sys.dm_os_performance_counters WITH (NOLOCK)
+WHERE [object_name] LIKE N''%Buffer Node%'' -- Handles named instances
+AND counter_name = N''Page life expectancy'' OPTION (RECOMPILE);', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Collect Memory Stats]    Script Date: 2/15/2017 1:19:45 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Collect Memory Stats', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=3, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'insert into RDX_MEM_Stats
+SELECT total_physical_memory_kb/1024 AS [Physical Memory (MB)], 
+       available_physical_memory_kb/1024 AS [Available Memory (MB)], 
+       total_page_file_kb/1024 AS [Total Page File (MB)], 
+	   available_page_file_kb/1024 AS [Available Page File (MB)], 
+	   system_cache_kb/1024 AS [System Cache (MB)],
+       system_memory_state_desc AS [System Memory State],
+	   	GETDATE() as EventTime,
+DATEPART(dd, GETDATE()) as EventTime_Day,
+DATEPART(hh, GETDATE()) as EventTime_Hour
+FROM sys.dm_os_sys_memory WITH (NOLOCK) OPTION (RECOMPILE);', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [collect IO Latency]    Script Date: 2/15/2017 1:19:45 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'collect IO Latency', 
+		@step_id=3, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=3, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'use master
+insert into RDX_IO_latency 
+SELECT tab.[Drive], tab.volume_mount_point AS [Volume Mount Point], 
+	CASE 
+		WHEN num_of_reads = 0 THEN 0 
+		ELSE (io_stall_read_ms/num_of_reads) 
+	END AS [Read Latency],
+	CASE 
+		WHEN num_of_writes = 0 THEN 0 
+		ELSE (io_stall_write_ms/num_of_writes) 
+	END AS [Write Latency],
+	CASE 
+		WHEN (num_of_reads = 0 AND num_of_writes = 0) THEN 0 
+		ELSE (io_stall/(num_of_reads + num_of_writes)) 
+	END AS [Overall Latency],
+	CASE 
+		WHEN num_of_reads = 0 THEN 0 
+		ELSE (num_of_bytes_read/num_of_reads) 
+	END AS [Avg Bytes/Read],
+	CASE 
+		WHEN num_of_writes = 0 THEN 0 
+		ELSE (num_of_bytes_written/num_of_writes) 
+	END AS [Avg Bytes/Write],
+	CASE 
+		WHEN (num_of_reads = 0 AND num_of_writes = 0) THEN 0 
+		ELSE ((num_of_bytes_read + num_of_bytes_written)/(num_of_reads + num_of_writes)) 
+	END AS [Avg Bytes/Transfer],
+	GETDATE() as EventTime,
+DATEPART(dd, GETDATE()) as EventTime_Day,
+DATEPART(hh, GETDATE()) as EventTime_Hour
+FROM (SELECT LEFT(UPPER(mf.physical_name), 2) AS Drive, SUM(num_of_reads) AS num_of_reads,
+	         SUM(io_stall_read_ms) AS io_stall_read_ms, SUM(num_of_writes) AS num_of_writes,
+	         SUM(io_stall_write_ms) AS io_stall_write_ms, SUM(num_of_bytes_read) AS num_of_bytes_read,
+	         SUM(num_of_bytes_written) AS num_of_bytes_written, SUM(io_stall) AS io_stall, vs.volume_mount_point 
+      FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS vfs
+      INNER JOIN sys.master_files AS mf WITH (NOLOCK)
+      ON vfs.database_id = mf.database_id AND vfs.file_id = mf.file_id
+	  CROSS APPLY sys.dm_os_volume_stats(mf.database_id, mf.[file_id]) AS vs 
+      GROUP BY LEFT(UPPER(mf.physical_name), 2), vs.volume_mount_point) AS tab
+ORDER BY [Overall Latency] OPTION (RECOMPILE);', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Powershell Metrics]    Script Date: 2/15/2017 1:19:45 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Powershell Metrics', 
+		@step_id=4, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'PowerShell', 
+		@command=N'$ctr = Get-Counter -Counter "\\ps2\sqlserver:access methods\page splits/sec" -sampleinterval 10
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select ''PageSplits_sec'' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+$ctr = Get-Counter -Counter "\Processor(_total)\interrupts/sec" -sampleinterval 5
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select ''Interrupts_sec'' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+
+$ctr = Get-Counter -Counter "\SQLServer:General Statistics\User Connections" -sampleinterval 1
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select ''User_Connections'' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+$ctr = Get-Counter -Counter "\SQLServer:General Statistics\Logical Connections" -sampleinterval 1
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select ''Logical_Connections'' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+$ctr = Get-Counter -Counter "\Network Interface(vmxnet3 ethernet adapter)\bytes received/sec" -sampleinterval 1
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select ''NET_bytes_rec'' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+
+$ctr = Get-Counter -Counter "\Network Interface(vmxnet3 ethernet adapter)\bytes sent/sec" -sampleinterval 1
+$val = $ctr.CounterSamples.CookedValue
+invoke-sqlcmd -serverinstance PS2 -Database master -Query "insert into [RDX_PS_stats] select ''NET_bytes_sent'' as Metric, $val as [value], GETDATE() as EventTime, DATEPART(dd, GETDATE()) as EventTime_Day, DATEPART(hh, GETDATE()) as EventTime_Hour"
+', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'Every 15 Min', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=4, 
+		@freq_subday_interval=15, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20170210, 
+		@active_end_date=99991231, 
+		@active_start_time=0, 
+		@active_end_time=235959, 
+		@schedule_uid=N'3e9c83eb-703b-40af-9456-80e8032b7ca8'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+/****** Object:  Job [_RDX_Collect_Stats_Hourly]    Script Date: 2/15/2017 1:19:46 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Data Collector]    Script Date: 2/15/2017 1:19:46 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Data Collector' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Data Collector'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'_RDX_Collect_Stats_Hourly', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'Data Collector', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Collect CPU stats]    Script Date: 2/15/2017 1:19:46 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Collect CPU stats', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=3, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'SET QUOTED_IDENTIFIER ON
+GO
+DECLARE @ts_now bigint = (SELECT cpu_ticks/(cpu_ticks/ms_ticks) FROM sys.dm_os_sys_info WITH (NOLOCK)); 
+insert into [RDX_CPU_Stats]
+SELECT TOP(60) SQLProcessUtilization AS [SQL Server Process CPU Utilization], 
+               SystemIdle AS [System Idle Process], 
+               100 - SystemIdle - SQLProcessUtilization AS [Other Process CPU Utilization], 
+               DATEADD(ms, -1 * (@ts_now - [timestamp]), GETDATE()) AS [Event Time] ,
+			   DATEPART(dd, DATEADD(ms, -1 * (@ts_now - [timestamp]), GETDATE())) as EventTime_Day,
+			   DATEPART(hh, DATEADD(ms, -1 * (@ts_now - [timestamp]), GETDATE())) as EventTime_Hour
+FROM (SELECT record.value(''(./Record/@id)[1]'', ''int'') AS record_id, 
+			record.value(''(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]'', ''int'') 
+			AS [SystemIdle], 
+			record.value(''(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]'', ''int'') 
+			AS [SQLProcessUtilization], [timestamp] 
+	  FROM (SELECT [timestamp], CONVERT(xml, record) AS [record] 
+			FROM sys.dm_os_ring_buffers WITH (NOLOCK)
+			WHERE ring_buffer_type = N''RING_BUFFER_SCHEDULER_MONITOR'' 
+			AND record LIKE N''%<SystemHealth>%'') AS x) AS y 
+ORDER BY record_id DESC OPTION (RECOMPILE);', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Collect Lock Waits]    Script Date: 2/15/2017 1:19:46 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Collect Lock Waits', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=3, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'insert into master..RDX_lock_wait_stats
+SELECT o.name AS [table_name], i.name AS [index_name], ios.index_id, ios.partition_number,
+		SUM(ios.row_lock_wait_count) AS [total_row_lock_waits], 
+		SUM(ios.row_lock_wait_in_ms) AS [total_row_lock_wait_in_ms],
+		SUM(ios.page_lock_wait_count) AS [total_page_lock_waits],
+		SUM(ios.page_lock_wait_in_ms) AS [total_page_lock_wait_in_ms],
+		SUM(page_io_latch_wait_count) AS [total_page_io_latch_lock_waits],
+		SUM(page_io_latch_wait_in_ms) AS [total_page_io_latch_lock_wait_in_ms],
+		SUM(ios.page_lock_wait_in_ms)+ SUM(row_lock_wait_in_ms) AS [total_lock_wait_in_ms],
+		GETDATE() as EventTime,
+DATEPART(dd, GETDATE()) as EventTime_Day,
+DATEPART(hh, GETDATE()) as EventTime_Hour, 
+db_name()
+FROM sys.dm_db_index_operational_stats(DB_ID(), NULL, NULL, NULL) AS ios
+INNER JOIN sys.objects AS o WITH (NOLOCK)
+ON ios.[object_id] = o.[object_id]
+INNER JOIN sys.indexes AS i WITH (NOLOCK)
+ON ios.[object_id] = i.[object_id] 
+AND ios.index_id = i.index_id
+WHERE o.[object_id] > 100
+GROUP BY o.name, i.name, ios.index_id, ios.partition_number
+HAVING SUM(ios.page_lock_wait_in_ms)+ SUM(row_lock_wait_in_ms) > 0
+ORDER BY total_lock_wait_in_ms DESC OPTION (RECOMPILE);', 
+		@database_name=N'CaseStack', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Collect IO Stats]    Script Date: 2/15/2017 1:19:46 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Collect IO Stats', 
+		@step_id=3, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=3, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'sp_msforeachdb 
+''
+use [?]
+insert into master..RDX_IO_Stats
+SELECT DB_NAME(DB_ID()) AS [Database Name], df.name AS [Logical Name], vfs.[file_id], df.type_desc,
+df.physical_name AS [Physical Name], CAST(vfs.size_on_disk_bytes/1048576.0 AS DECIMAL(10, 2)) AS [Size on Disk (MB)],
+vfs.num_of_reads, vfs.num_of_writes, vfs.io_stall_read_ms, vfs.io_stall_write_ms,
+CAST(100. * vfs.io_stall_read_ms/(vfs.io_stall_read_ms + vfs.io_stall_write_ms) AS DECIMAL(10,1)) AS [IO Stall Reads Pct],
+CAST(100. * vfs.io_stall_write_ms/(vfs.io_stall_write_ms + vfs.io_stall_read_ms) AS DECIMAL(10,1)) AS [IO Stall Writes Pct],
+(vfs.num_of_reads + vfs.num_of_writes) AS [Writes + Reads], 
+CAST(vfs.num_of_bytes_read/1048576.0 AS DECIMAL(10, 2)) AS [MB Read], 
+CAST(vfs.num_of_bytes_written/1048576.0 AS DECIMAL(10, 2)) AS [MB Written],
+GETDATE() as EventTime,
+DATEPART(dd, GETDATE()) as EventTime_Day,
+DATEPART(hh, GETDATE()) as EventTime_Hour
+
+FROM sys.dm_io_virtual_file_stats(DB_ID(), NULL) AS vfs
+INNER JOIN sys.database_files AS df WITH (NOLOCK)
+ON vfs.[file_id]= df.[file_id] OPTION (RECOMPILE);
+''
+
+GO
+
+use master
+insert into RDX_IO_stats_2
+SELECT DB_NAME(fs.database_id) AS [Database Name], CAST(fs.io_stall_read_ms/(1.0 + fs.num_of_reads) AS NUMERIC(10,1)) AS [avg_read_stall_ms],
+CAST(fs.io_stall_write_ms/(1.0 + fs.num_of_writes) AS NUMERIC(10,1)) AS [avg_write_stall_ms],
+CAST((fs.io_stall_read_ms + fs.io_stall_write_ms)/(1.0 + fs.num_of_reads + fs.num_of_writes) AS NUMERIC(10,1)) AS [avg_io_stall_ms],
+mf.physical_name, mf.type_desc, fs.io_stall_read_ms, fs.num_of_reads, 
+fs.io_stall_write_ms, fs.num_of_writes, fs.io_stall_read_ms + fs.io_stall_write_ms AS [io_stalls], fs.num_of_reads + fs.num_of_writes AS [total_io],
+GETDATE() as EventTime,
+DATEPART(dd, GETDATE()) as EventTime_Day,
+DATEPART(hh, GETDATE()) as EventTime_Hour
+FROM sys.dm_io_virtual_file_stats(null,null) AS fs
+INNER JOIN sys.master_files AS mf WITH (NOLOCK)
+ON fs.database_id = mf.database_id
+AND fs.[file_id] = mf.[file_id]
+ORDER BY avg_io_stall_ms DESC OPTION (RECOMPILE);
+
+
+', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Collect Wait Stats]    Script Date: 2/15/2017 1:19:46 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Collect Wait Stats', 
+		@step_id=4, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'WITH [Waits] 
+AS (SELECT wait_type, wait_time_ms/ 1000.0 AS [WaitS],
+          (wait_time_ms - signal_wait_time_ms) / 1000.0 AS [ResourceS],
+           signal_wait_time_ms / 1000.0 AS [SignalS],
+           waiting_tasks_count AS [WaitCount],
+           100.0 *  wait_time_ms / SUM (wait_time_ms) OVER() AS [Percentage],
+           ROW_NUMBER() OVER(ORDER BY wait_time_ms DESC) AS [RowNum]
+    FROM sys.dm_os_wait_stats WITH (NOLOCK)
+    WHERE [wait_type] NOT IN (
+        N''BROKER_EVENTHANDLER'', N''BROKER_RECEIVE_WAITFOR'', N''BROKER_TASK_STOP'',
+		N''BROKER_TO_FLUSH'', N''BROKER_TRANSMITTER'', N''CHECKPOINT_QUEUE'',
+        N''CHKPT'', N''CLR_AUTO_EVENT'', N''CLR_MANUAL_EVENT'', N''CLR_SEMAPHORE'',
+        N''DBMIRROR_DBM_EVENT'', N''DBMIRROR_EVENTS_QUEUE'', N''DBMIRROR_WORKER_QUEUE'',
+		N''DBMIRRORING_CMD'', N''DIRTY_PAGE_POLL'', N''DISPATCHER_QUEUE_SEMAPHORE'',
+        N''EXECSYNC'', N''FSAGENT'', N''FT_IFTS_SCHEDULER_IDLE_WAIT'', N''FT_IFTSHC_MUTEX'',
+        N''HADR_CLUSAPI_CALL'', N''HADR_FILESTREAM_IOMGR_IOCOMPLETION'', N''HADR_LOGCAPTURE_WAIT'', 
+		N''HADR_NOTIFICATION_DEQUEUE'', N''HADR_TIMER_TASK'', N''HADR_WORK_QUEUE'',
+        N''KSOURCE_WAKEUP'', N''LAZYWRITER_SLEEP'', N''LOGMGR_QUEUE'', N''ONDEMAND_TASK_QUEUE'',
+        N''PWAIT_ALL_COMPONENTS_INITIALIZED'', 
+		N''PREEMPTIVE_OS_AUTHENTICATIONOPS'', N''PREEMPTIVE_OS_CREATEFILE'', N''PREEMPTIVE_OS_GENERICOPS'',
+		N''PREEMPTIVE_OS_LIBRARYOPS'', N''PREEMPTIVE_OS_QUERYREGISTRY'',
+		N''QDS_PERSIST_TASK_MAIN_LOOP_SLEEP'',
+        N''QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP'', N''QDS_SHUTDOWN_QUEUE'', N''REQUEST_FOR_DEADLOCK_SEARCH'',
+		N''RESOURCE_QUEUE'', N''SERVER_IDLE_CHECK'', N''SLEEP_BPOOL_FLUSH'', N''SLEEP_DBSTARTUP'',
+		N''SLEEP_DCOMSTARTUP'', N''SLEEP_MASTERDBREADY'', N''SLEEP_MASTERMDREADY'',
+        N''SLEEP_MASTERUPGRADED'', N''SLEEP_MSDBSTARTUP'', N''SLEEP_SYSTEMTASK'', N''SLEEP_TASK'',
+        N''SLEEP_TEMPDBSTARTUP'', N''SNI_HTTP_ACCEPT'', N''SP_SERVER_DIAGNOSTICS_SLEEP'',
+		N''SQLTRACE_BUFFER_FLUSH'', N''SQLTRACE_INCREMENTAL_FLUSH_SLEEP'', N''SQLTRACE_WAIT_ENTRIES'',
+		N''WAIT_FOR_RESULTS'', N''WAITFOR'', N''WAITFOR_TASKSHUTDOWN'', N''WAIT_XTP_HOST_WAIT'',
+		N''WAIT_XTP_OFFLINE_CKPT_NEW_LOG'', N''WAIT_XTP_CKPT_CLOSE'', N''XE_DISPATCHER_JOIN'',
+        N''XE_DISPATCHER_WAIT'', N''XE_TIMER_EVENT'')
+    AND waiting_tasks_count > 0)
+insert into RDX_Wait_stats
+SELECT
+    MAX (W1.wait_type) AS [WaitType],
+    CAST (MAX (W1.WaitS) AS DECIMAL (16,2)) AS [Wait_Sec],
+    CAST (MAX (W1.ResourceS) AS DECIMAL (16,2)) AS [Resource_Sec],
+    CAST (MAX (W1.SignalS) AS DECIMAL (16,2)) AS [Signal_Sec],
+    MAX (W1.WaitCount) AS [Wait Count],
+GETDATE() as EventTime,
+DATEPART(dd, GETDATE()) as EventTime_Day,
+DATEPART(hh, GETDATE()) as EventTime_Hour
+FROM Waits AS W1
+INNER JOIN Waits AS W2
+ON W2.RowNum <= W1.RowNum
+GROUP BY W1.RowNum
+HAVING SUM (W2.Percentage) - MAX (W1.Percentage) < 99 -- percentage threshold
+OPTION (RECOMPILE);', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'Hourly', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=8, 
+		@freq_subday_interval=1, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20170210, 
+		@active_end_date=99991231, 
+		@active_start_time=0, 
+		@active_end_time=235959, 
+		@schedule_uid=N'a3d8ea6e-11a4-432e-a984-8e57cadd94bb'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+/****** Object:  Job [_RDX_Executive_Summary]    Script Date: 2/15/2017 1:19:47 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Data Collector]    Script Date: 2/15/2017 1:19:47 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Data Collector' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Data Collector'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'_RDX_Executive_Summary', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'rollup data into summary table, then generate email report', 
+		@category_name=N'Data Collector', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Rollup General Data]    Script Date: 2/15/2017 1:19:47 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Rollup General Data', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'--Rollup stats - to hour
+
+--User Connections
+insert into master..[RDX_Stats_Summary]
+select ''GEN: User Connections'',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = ''User_Connections''
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+
+-----------------------------
+--Logical Connections
+insert into master..[RDX_Stats_Summary]
+select ''GEN: Logical Connections'',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = ''Logical_Connections''
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--Network - MB per sec sent
+insert into master..[RDX_Stats_Summary]
+select ''NET: Network - MB Sent Per Second'',
+NULL as MetricValue_Total,
+AVG(a.value)/1000000 as MetricValue_AVG, 
+MAX(a.value)/1000000 as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = ''NET_bytes_sent''
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--Network - MB per sec received
+insert into master..[RDX_Stats_Summary]
+select ''NET: Network - MB Received Per Second'',
+NULL as MetricValue_Total,
+AVG(a.value)/1000000 as MetricValue_AVG, 
+MAX(a.value)/1000000 as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = ''NET_bytes_rec''
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+
+--PLE usage
+insert into master..[RDX_Stats_Summary]
+select ''MEM: Page Life Expectancy (PLE)'',
+NULL as MetricValue_Total,
+AVG(a.[PLE]) as MetricValue_AVG, 
+MAX(a.[PLE]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PLE_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--memory usage
+insert into master..[RDX_Stats_Summary]
+select ''MEM: Available Memory (MB)'',
+NULL as MetricValue_Total,
+AVG(a.[Available Memory (MB)]) as MetricValue_AVG, 
+MAX(a.[Available Memory (MB)]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_MEM_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--sql cpu usage
+insert into master..[RDX_Stats_Summary]
+select ''CPU: SQL CPU Utilization (%)'',
+NULL as MetricValue_Total,
+AVG(a.SQL_Utilization) as MetricValue_AVG, 
+MAX(a.SQL_Utilization) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--idle cpu usage
+insert into master..[RDX_Stats_Summary]
+select ''CPU: Idle CPU Utilization (%)'',
+NULL as MetricValue_Total,
+AVG(a.System_Idle) as MetricValue_AVG, 
+MAX(a.System_Idle) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--non SQL CPU usage
+insert into master..[RDX_Stats_Summary]
+select ''CPU: Other Proceses CPU Utilization (%)'',
+NULL as MetricValue_Total,
+AVG(a.Other_Process_Utilization) as MetricValue_AVG, 
+MAX(a.Other_Process_Utilization) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_CPU_Stats] a
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--Interrupts / sec
+insert into master..[RDX_Stats_Summary]
+select ''CPU: Interrupts Per Second'',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = ''Interrupts_sec''
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Rollup Waits]    Script Date: 2/15/2017 1:19:47 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Rollup Waits', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'
+--wait stats
+create table #wait_stats
+(waittype varchar(150), 
+wait_sec dec(10,2),
+resource_sec dec(10,2),
+signal_sec dec(10,2),
+wait_count bigint,
+EventTime_day int,
+EventTime_hour int
+);
+insert into #wait_stats
+select a.WaitType, 
+a.Wait_Sec - b.Wait_Sec as Wait_Sec, 
+a.Resource_sec - b.Resource_sec as Resource_sec,
+a.Signal_Sec - b.Signal_Sec as Signal_Sec,
+a.[Wait Count] - b.[Wait Count] as [Wait_Count],
+a.EventTime_Day, a.EventTime_Hour
+from [RDX_Wait_Stats] as a
+inner join [RDX_Wait_Stats] as b
+on a.WaitType = b.WaitType and a.EventTime_Day = b.EventTime_Day and a.EventTime_hour -1 = b.EventTime_Hour
+
+--select * from #wait_stats
+
+insert into master..[RDX_Stats_Summary]
+select ''WaitType - '' + waittype + '' (wait in sec)'',
+SUM(wait_sec) as MetricValue_Total,
+AVG(wait_sec) as MetricValue_AVG, 
+MAX(wait_sec) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+
+insert into master..[RDX_Stats_Summary]
+select ''CPU: Number of Interrupts in SQL'',
+SUM(wait_sec) as MetricValue_Total,
+AVG(wait_sec) as MetricValue_AVG, 
+MAX(wait_sec) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+where waittype= ''SOS_SCHEDULER_YIELD''
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WaitType - '' + waittype + '' (resource sec)'',
+SUM(resource_sec) as MetricValue_Total,
+AVG(resource_sec) as MetricValue_AVG, 
+MAX(resource_sec) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WaitType - '' + waittype + '' (signal sec)'',
+SUM(signal_sec) as MetricValue_Total,
+AVG(signal_sec) as MetricValue_AVG, 
+MAX(signal_sec) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WaitType - '' + waittype + '' (wait count)'',
+SUM(wait_count) as MetricValue_Total,
+AVG(wait_count) as MetricValue_AVG, 
+MAX(wait_count) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #wait_stats
+GROUP BY waittype, [EventTime_Day], [EventTime_Hour]
+
+drop table #wait_stats
+-----------------------------
+
+
+--lock waits
+create table #lock_waits
+(database_name varchar(150), 
+[total_row_lock_waits] bigint,
+[total_row_lock_waits_in_ms] bigint,
+[total_page_lock_waits] bigint,
+[total_page_lock_wait_in_ms] bigint,
+[total_page_io_latch_lock_waits] bigint,
+[total_page_io_latch_lock_wait_in_ms] bigint,
+[total_lock_wait_in_ms] bigint,
+EventTime_day int,
+EventTime_hour int
+);
+with CTE as (
+select database_name, SUM([total_row_lock_waits]) as [total_row_lock_waits], 
+SUM([total_row_lock_wait_in_ms]) as [total_row_lock_waits_in_ms],
+SUM([total_page_lock_waits]) as [total_page_lock_waits],
+SUM([total_page_lock_wait_in_ms]) as [total_page_lock_wait_in_ms],
+SUM([total_page_io_latch_lock_waits]) as [total_page_io_latch_lock_waits],
+SUM([total_page_io_latch_lock_wait_in_ms]) as [total_page_io_latch_lock_wait_in_ms],
+SUM([total_lock_wait_in_ms]) as [total_lock_wait_in_ms],
+EventTime_Day, EventTime_Hour
+from [dbo].[RDX_lock_wait_stats]
+group by database_name, EventTime_Day, EventTime_Hour
+)
+insert into #lock_waits
+select a.database_name, 
+a.[total_row_lock_waits] - b.[total_row_lock_waits] as [total_row_lock_waits], 
+a.[total_row_lock_waits_in_ms] - b.[total_row_lock_waits_in_ms] as [total_row_lock_waits_in_ms],
+a.[total_page_lock_waits] - b.[total_page_lock_waits] as [total_page_lock_waits],
+a.[total_page_lock_wait_in_ms] - b.[total_page_lock_wait_in_ms] as [total_page_lock_wait_in_ms],
+a.[total_page_io_latch_lock_waits] - b.[total_page_io_latch_lock_waits] as [total_page_io_latch_lock_waits],
+a.[total_page_io_latch_lock_wait_in_ms] - b.[total_page_io_latch_lock_wait_in_ms] as [total_page_io_latch_lock_wait_in_ms],
+a.[total_lock_wait_in_ms] - b.[total_lock_wait_in_ms] as [total_lock_wait_in_ms],
+a.EventTime_Day, a.EventTime_Hour 
+from CTE as a
+inner join CTE as b
+on a.database_name = b.database_name and a.EventTime_Day = b.EventTime_Day and a.EventTime_hour -1 = b.EventTime_Hour
+
+
+insert into master..[RDX_Stats_Summary]
+select ''WAIT: Row Lock Waits (#) - '' + database_name,
+SUM([total_row_lock_waits]) as MetricValue_Total,
+AVG([total_row_lock_waits]) as MetricValue_AVG, 
+MAX([total_row_lock_waits]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WAIT: Row Lock Waits (ms) - '' + database_name,
+SUM([total_row_lock_waits_in_ms]) as MetricValue_Total,
+AVG([total_row_lock_waits_in_ms]) as MetricValue_AVG, 
+MAX([total_row_lock_waits_in_ms]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WAIT: Page Lock Waits (#) - '' + database_name,
+SUM([total_page_lock_waits]) as MetricValue_Total,
+AVG([total_page_lock_waits]) as MetricValue_AVG, 
+MAX([total_page_lock_waits]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WAIT: Page Lock Waits (ms) - '' + database_name,
+SUM([total_page_lock_wait_in_ms]) as MetricValue_Total,
+AVG([total_page_lock_wait_in_ms]) as MetricValue_AVG, 
+MAX([total_page_lock_wait_in_ms]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WAIT: Page IO Latch Lock Waits (#) - '' + database_name,
+SUM([total_page_io_latch_lock_waits]) as MetricValue_Total,
+AVG([total_page_io_latch_lock_waits]) as MetricValue_AVG, 
+MAX([total_page_io_latch_lock_waits]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WAIT: Page IO Latch Lock Waits (ms) - '' + database_name,
+SUM([total_page_io_latch_lock_wait_in_ms]) as MetricValue_Total,
+AVG([total_page_io_latch_lock_wait_in_ms]) as MetricValue_AVG, 
+MAX([total_page_io_latch_lock_wait_in_ms]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''WAIT: Total Lock Waits (ms) - '' + database_name,
+SUM([total_lock_wait_in_ms]) as MetricValue_Total,
+AVG([total_lock_wait_in_ms]) as MetricValue_AVG, 
+MAX([total_lock_wait_in_ms]) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #lock_waits
+GROUP BY database_name, [EventTime_Day], [EventTime_Hour]
+
+drop table #lock_waits', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Rollup IO]    Script Date: 2/15/2017 1:19:47 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Rollup IO', 
+		@step_id=3, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'
+--Page Splits
+insert into master..[RDX_Stats_Summary]
+select ''IO: Page Splits Per Second - D:'',
+NULL as MetricValue_Total,
+AVG(a.value) as MetricValue_AVG, 
+MAX(a.value) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour] , GETDATE()
+FROM [master].[dbo].[RDX_PS_stats] a
+where a.Metric = ''PageSplits_sec''
+GROUP BY a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------
+
+--io and stalls
+create table #io_stalls
+(drive varchar(5), 
+io_stall_read_ms_per_hour bigint,
+total_num_reads bigint,
+total_io_stall_write_ms bigint,
+total_num_writes bigint,
+total_io bigint,
+EventTime_day int,
+EventTime_hour int
+);
+with CTE as (select substring([physical_name],0,3) as drive, SUM(io_stall_read_ms) as total_io_stall_read_ms, 
+SUM(num_of_reads) as total_num_reads, SUM(io_stall_write_ms) as total_io_stall_write_ms, SUM(num_of_writes) as total_num_writes, 
+SUM(total_io) as total_io, EventTime_Day, EventTime_Hour
+from RDX_IO_Stats_2
+group by substring([physical_name],0,3), EventTime_Day, EventTime_Hour
+)
+insert into #io_stalls
+select a.drive, 
+a.total_io_stall_read_ms - b.total_io_stall_read_ms as io_stall_read_ms_per_hour, 
+a.total_num_reads - b.total_num_reads as total_num_reads,
+a.total_io_stall_write_ms - b.total_io_stall_write_ms as total_io_stall_write_ms,
+a.total_num_writes - b.total_num_writes as total_num_writes,
+a.total_io - b.total_io as total_io,
+a.EventTime_Day, a.EventTime_Hour
+from CTE as a
+inner join CTE as b
+on a.drive = b.drive and a.EventTime_Day = b.EventTime_Day and a.EventTime_hour -1 = b.EventTime_Hour
+
+--select * from #io_stalls
+
+insert into master..[RDX_Stats_Summary]
+select ''IO: Total IO Read Stalls (ms) - '' + drive,
+SUM(io_stall_read_ms_per_hour) as MetricValue_Total,
+AVG(io_stall_read_ms_per_hour) as MetricValue_AVG, 
+MAX(io_stall_read_ms_per_hour) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''IO: Total Number of Reads - '' + drive,
+SUM(total_num_reads) as MetricValue_Total,
+AVG(total_num_reads) as MetricValue_AVG, 
+MAX(total_num_reads) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+
+insert into master..[RDX_Stats_Summary]
+select ''IO: Total IO Write Stalls (ms) - '' + drive,
+SUM(total_io_stall_write_ms) as MetricValue_Total,
+AVG(total_io_stall_write_ms) as MetricValue_AVG, 
+MAX(total_io_stall_write_ms) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''IO: Total Number of Writes - '' + drive,
+SUM(total_num_writes) as MetricValue_Total,
+AVG(total_num_writes) as MetricValue_AVG, 
+MAX(total_num_writes) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''IO: Total IO - '' + drive,
+SUM(total_io) as MetricValue_Total,
+AVG(total_io) as MetricValue_AVG, 
+MAX(total_io) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_stalls
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+
+drop table #io_stalls
+-----------------------------
+
+
+
+
+
+--MB read/ write
+--insert to temp table then load to summary table
+create table #io_MB
+(drive varchar(5), 
+total_MB_read dec(10,2),
+total_MB_written dec(10,2),
+total_MB_RW dec(10,2),
+EventTime_day int,
+EventTime_hour int
+);
+with CTE as (select substring([physical name],0,3) as drive, SUM([MB Read]) as total_MB_Read, 
+SUM([MB Written]) as total_MB_Written, SUM([MB Read] + [MB Written]) as total_MB_RW, 
+EventTime_Day, EventTime_Hour
+from RDX_IO_Stats
+group by substring([physical name],0,3), EventTime_Day, EventTime_Hour
+)
+insert into #io_MB
+select a.drive, 
+a.total_MB_Read - b.total_MB_Read as total_MB_Read, 
+a.total_MB_Written - b.total_MB_Written as total_MB_Written,
+a.total_MB_RW - b.total_MB_RW as total_MB_RW,
+a.EventTime_Day, a.EventTime_Hour
+from CTE as a
+inner join CTE as b
+on a.drive = b.drive and a.EventTime_Day = b.EventTime_Day and a.EventTime_hour -1 = b.EventTime_Hour
+
+--select * from #io_MB
+
+insert into master..[RDX_Stats_Summary]
+select ''IO: Total MB Read - '' + drive,
+SUM(total_MB_read) as MetricValue_Total,
+AVG(total_MB_read) as MetricValue_AVG, 
+MAX(total_MB_read) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_MB
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+insert into master..[RDX_Stats_Summary]
+select ''IO: Total MB Written - '' + drive,
+SUM(total_MB_written) as MetricValue_Total,
+AVG(total_MB_written) as MetricValue_AVG, 
+MAX(total_MB_written) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_MB
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+
+insert into master..[RDX_Stats_Summary]
+select ''IO: Total MB Reads & Writes - '' + drive,
+SUM(total_MB_RW) as MetricValue_Total,
+AVG(total_MB_RW) as MetricValue_AVG, 
+MAX(total_MB_RW) as MetricValue_Peak,
+[EventTime_Day], [EventTime_Hour]  , GETDATE()
+FROM #io_MB
+GROUP BY drive, [EventTime_Day], [EventTime_Hour]
+
+drop table #io_mb
+-----------------------------
+
+
+--IO latency
+insert into master..[RDX_Stats_Summary]
+select ''IO: Read Latency - '' + a.drive,
+NULL as MetricValue_Total,
+AVG(a.[Read Latency]) as MetricValue_AVG, 
+MAX(a.[Read Latency]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_IO_Latency] a
+GROUP BY a.drive, a.[EventTime_Day], a.[EventTime_Hour]
+--
+insert into master..[RDX_Stats_Summary]
+select ''IO: Write Latency - '' + a.drive,
+NULL as MetricValue_Total,
+AVG(a.[Write Latency]) as MetricValue_AVG, 
+MAX(a.[Write Latency]) as MetricValue_Peak,
+a.[EventTime_Day], a.[EventTime_Hour]  , GETDATE()
+FROM [master].[dbo].[RDX_IO_Latency] a
+GROUP BY a.drive, a.[EventTime_Day], a.[EventTime_Hour]
+-----------------------------', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Send Report]    Script Date: 2/15/2017 1:19:47 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Send Report', 
+		@step_id=4, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'DECLARE @html nvarchar(max);
+DECLARE @subject nvarchar(200);
+DECLARE @recipients nvarchar(2000);
+DECLARE @profile nvarchar(200);
+DECLARE @historyCheck int;
+DECLARE @retention int;
+DECLARE @errors int;
+declare @tableHTML nvarchar(max); 
+
+
+--You can set the email to use the addresses from an Operator, or explicitly define the email address
+SET @recipients = (select email_address from msdb.dbo.sysoperators where name = ''Server_Reports'') --uses the Server_Reports operator
+--SET @recipients = ''npatti@rdx.com''; --seperate emails with semicolon
+
+SET @subject = ''PS2 - Daily Executive Summary''; --subject of email
+SET @profile = ''PS_Reports''; --mail profile to use
+SET @retention = -365 -- how many days of history to keep
+
+
+create table #report(
+Metric varchar(250),
+Total dec(18,2),
+Average dec(18,2),
+Peak dec(18,2),
+PeakTime varchar(100)
+);
+
+with CTE_peaktime AS(
+select Metric, EventTime_Hour,
+Row_number() over (Partition by Metric order by MetricValue_Peak desc, EventTime_Hour asc) as row_num
+from [master].[dbo].[RDX_Stats_Summary]
+where EventTime_Day = DATEPART(dd, GETDATE())
+), 
+CTE_stats AS(
+select Metric, EventTime_Day, 
+SUM(metricValue_Total) as [Total],
+cast(AVG(metricValue_AVG) as dec(18,2)) as [AVG], 
+MAX(MetricValue_Peak) as [Peak] 
+from [master].[dbo].[RDX_Stats_Summary] 
+where EventTime_Day = DATEPART(dd, GETDATE())
+group by Metric, EventTime_Day
+)
+
+insert into #report	
+select 
+a.metric,
+a.total,
+a.[AVG],
+a.Peak,
+cast(CONVERT(date, GETDATE()) as varchar) + '' '' +  cast(b.EventTime_Hour as varchar) + '':00'' as PeakTime
+from CTE_stats a
+join CTE_peaktime b
+on a.metric = b.metric
+where b.row_num = 1
+order by Metric asc
+
+create table #report_h(
+Metric varchar(250),
+EventTime varchar(100),
+Total dec(18,2),
+Average dec(18,2),
+Peak dec(18,2)
+);
+WITH CTE_hourly AS(
+select Metric, 
+cast(CONVERT(date, GETDATE()) as varchar) + '' '' +  cast(EventTime_Hour as varchar) + '':00'' as EventTime,
+metricValue_Total as [Total],
+cast(metricValue_AVG as dec(18,2)) as [AVG], 
+MetricValue_Peak as [Peak] 
+from [master].[dbo].[RDX_Stats_Summary] 
+where EventTime_Day = DATEPART(dd, GETDATE())
+and Metric like ''IO%''
+)
+insert into #report_h	
+select 
+a.metric,
+a.EventTime,
+a.total,
+a.[AVG],
+a.Peak
+from CTE_hourly a
+order by Metric asc
+
+--build HTML report
+
+ --CPU & Memory
+set @tableHTML = 
+	N''<h2>PS2 - Executive Summary Report </h2>
+	<br />
+	<br /> 
+	<h2>General Summary </h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>Metric</b></p></th> 
+	<th><p align="center"><b>Total</b></p></th>
+	<th><p align="center"><b>Average</b></p></th> 
+	<th><p align="center"><b>Peak</b></p></th>
+	<th><p align="center"><b>Time of Peak Activity</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select 
+	td = metric,'' '',
+	td = coalesce(cast(Total as varchar(25)), ''''), '' '',
+	td = Average,'' '',
+	td = Peak,'' '',
+	td = PeakTime , '' ''
+	from #report
+	where Metric like ''MEM%'' or Metric like ''CPU%''  or Metric like ''GEN%'' or Metric like ''NET%'' or Metric = ''IO: Page Splits Per Second''
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 
+
+--IO Summary
+set @tableHTML = @tableHTML + N''
+	<br />
+	<br /> '' +
+	N''<h2>IO Summary </h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>Drive</b></p></th> 	
+	<th><p align="center"><b>Total IO</b></p></th>
+	<th><p align="center"><b>Reads</b></p></th>
+	<th><p align="center"><b>Writes</b></p></th>
+	<th><p align="center"><b>Reads MB</b></p></th>
+	<th><p align="center"><b>Writes MB</b></p></th>
+	<th><p align="center"><b>Total MB</b></p></th>
+	<th><p align="center"><b>Read Latency</b></p></th>
+	<th><p align="center"><b>Write Latency</b></p></th>
+	<th><p align="center"><b>Total IO Read Stalls (in ms)</b></p></th>
+	<th><p align="center"><b>Total IO Write Stalls (in ms)</b></p></th>
+	<th><p align="center"><b>Time of Peak IO Activity</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select  
+	td = right(r1.Metric, 2),'' '', 
+	td = r1.Total,'' '',
+	td = r2.Total,'' '',
+	td = r3.Total,'' '',
+	td = r4.Total,'' '',
+	td = r5.Total,'' '',
+	td = r6.Total,'' '',
+	td = r7.Average,'' '',
+	td = r8.Average,'' '',
+	td = r9.Total,'' '',
+	td = r10.Total,'' '',
+	td = r1.PeakTime,'' ''
+	from #report r1
+	join #report r2 on right(r1.Metric, 2) = right(r2.Metric, 2)
+	join #report r3 on right(r1.Metric, 2) = right(r3.Metric, 2)
+	join #report r4 on right(r1.Metric, 2) = right(r4.Metric, 2)
+	join #report r5 on right(r1.Metric, 2) = right(r5.Metric, 2)
+	join #report r6 on right(r1.Metric, 2) = right(r6.Metric, 2)
+	join #report r7 on right(r1.Metric, 2) = right(r7.Metric, 2)
+	join #report r8 on right(r1.Metric, 2) = right(r8.Metric, 2)
+	join #report r9 on right(r1.Metric, 2) = right(r9.Metric, 2)
+	join #report r10 on right(r1.Metric, 2) = right(r10.Metric, 2)
+	where r1.Metric like ''IO: Total IO - %''
+	and r2.Metric like ''IO: Total Number of Reads -%''
+	and r3.Metric like ''IO: Total Number of Writes -%''
+	and r4.Metric like ''IO: Total MB Read -%''
+	and r5.Metric like ''IO: Total MB Written -%''
+	and r6.Metric like ''IO: Total MB Reads & Writes -%''
+	and r7.Metric like ''IO: Read Latency -%''
+	and r8.Metric like ''IO: Write Latency -%''
+	and r9.Metric like ''IO: Total IO Read Stalls (ms) -%''
+	and r10.Metric like ''IO: Total IO Write Stalls (ms) -%''
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 
+
+
+--wait types
+set @tableHTML = @tableHTML + N''
+	<br />
+	<br /> '' +
+	N''<h2>Wait Types Summary </h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>Wait Type</b></p></th> 	
+	<th><p align="center"><b>Number of Waits</b></p></th>
+	<th><p align="center"><b>Total Time Waiting (seconds)</b></p></th>
+	<th><p align="center"><b>Average Time Per Wait (ms)</b></p></th>
+	<th><p align="center"><b>Time of Peak Activity</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select  
+	td = Substring(r1.Metric, 12, LEN(r1.Metric)-CHARINDEX(''('', REVERSE(r1.Metric))-12),'' '', 
+	td = r1.Total,'' '',
+	td = r2.Total,'' '',
+	td = cast(cast ((r2.Total/r1.Total)*1000 as dec(18,6)) as varchar),'' '',
+	td = r1.PeakTime,'' ''
+	from #report r1
+	join #report r2 on Substring(r1.Metric, 12, LEN(r1.Metric)-CHARINDEX(''('', REVERSE(r1.Metric))-12) = Substring(r2.Metric, 12, LEN(r2.Metric)-CHARINDEX(''('', REVERSE(r2.Metric))-12)
+	where r1.Metric like ''WaitType -%''
+	and r1.Metric like ''%(wait count)''
+	and r2.Metric like ''%(wait in sec)''
+	and r1.Total != 0 and r2.Total != 0
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 
+
+--Lock Waits
+set @tableHTML = @tableHTML + N''
+	<br />
+	<br /> '' +
+	N''<h2>Lock Wait Summary </h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>Lock Wait Type</b></p></th> 	
+	<th><p align="center"><b>Number of Lock Waits</b></p></th>
+	<th><p align="center"><b>Total Time Waiting (ms)</b></p></th>
+	<th><p align="center"><b>Average Time Per Wait (ms)</b></p></th>
+	<th><p align="center"><b>Time of Peak Activity</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select 
+	td = Substring(r1.Metric, 7, LEN(r1.Metric)-CHARINDEX(''('', REVERSE(r1.Metric))-7),'' '',
+	td = r1.Total,'' '', 
+	td = r2.Total,'' '',
+	td = cast(cast ((r2.Total/r1.Total) as dec(18,3))as varchar),'' '',
+	td = r1.PeakTime,'' ''
+	from #report r1
+	join #report r2 on Substring(r1.Metric, 7, LEN(r1.Metric)-CHARINDEX(''('', REVERSE(r1.Metric))-7) = Substring(r2.Metric, 7, LEN(r2.Metric)-CHARINDEX(''('', REVERSE(r2.Metric))-7)
+	where r1.Metric like ''Wait:%''
+	and r1.Metric like ''%(#)%''
+	and r2.Metric like ''%(ms)%''
+	and r1.Total != 0 and r2.Total != 0
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 
+
+--IO By the Hour
+set @tableHTML = @tableHTML + N''
+	<br />
+	<br /> '' +
+	N''<h2>IO Stats By The Hour </h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>Drive</b></p></th> 	
+	<th><p align="center"><b>Event Time</b></p></th>
+	<th><p align="center"><b>Total IO</b></p></th>
+	<th><p align="center"><b>Reads</b></p></th>
+	<th><p align="center"><b>Writes</b></p></th>
+	<th><p align="center"><b>Reads MB</b></p></th>
+	<th><p align="center"><b>Writes MB</b></p></th>
+	<th><p align="center"><b>Total MB</b></p></th>
+	<th><p align="center"><b>Read Latency</b></p></th>
+	<th><p align="center"><b>Write Latency</b></p></th>
+	<th><p align="center"><b>Total IO Read Stalls (in ms)</b></p></th>
+	<th><p align="center"><b>Total IO Write Stalls (in ms)</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select 
+	td = right(r1.Metric, 2),'' '', 
+	td = r1.EventTime, '' '',
+	td = r1.Total,'' '',
+	td = r2.Total,'' '',
+	td = r3.Total,'' '',
+	td = r4.Total,'' '',
+	td = r5.Total,'' '',
+	td = r6.Total,'' '',
+	td = r7.Average,'' '',
+	td = r8.Average,'' '',
+	td = r9.Total,'' '',
+	td = r10.Total,'' ''
+	from #report_h r1
+	join #report_h r2 on right(r1.Metric, 2) = right(r2.Metric, 2) and r1.EventTime = r2.EventTime
+	join #report_h r3 on right(r1.Metric, 2) = right(r3.Metric, 2) and r1.EventTime = r3.EventTime
+	join #report_h r4 on right(r1.Metric, 2) = right(r4.Metric, 2) and r1.EventTime = r4.EventTime
+	join #report_h r5 on right(r1.Metric, 2) = right(r5.Metric, 2) and r1.EventTime = r5.EventTime
+	join #report_h r6 on right(r1.Metric, 2) = right(r6.Metric, 2) and r1.EventTime = r6.EventTime
+	join #report_h r7 on right(r1.Metric, 2) = right(r7.Metric, 2) and r1.EventTime = r7.EventTime
+	join #report_h r8 on right(r1.Metric, 2) = right(r8.Metric, 2) and r1.EventTime = r8.EventTime
+	join #report_h r9 on right(r1.Metric, 2) = right(r9.Metric, 2) and r1.EventTime = r9.EventTime
+	join #report_h r10 on right(r1.Metric, 2) = right(r10.Metric, 2) and r1.EventTime = r10.EventTime
+	where r1.Metric like ''IO: Total IO - %''
+	and r2.Metric like ''IO: Total Number of Reads -%''
+	and r3.Metric like ''IO: Total Number of Writes -%''
+	and r4.Metric like ''IO: Total MB Read -%''
+	and r5.Metric like ''IO: Total MB Written -%''
+	and r6.Metric like ''IO: Total MB Reads & Writes -%''
+	and r7.Metric like ''IO: Read Latency -%''
+	and r8.Metric like ''IO: Write Latency -%''
+	and r9.Metric like ''IO: Total IO Read Stalls (ms) -%''
+	and r10.Metric like ''IO: Total IO Write Stalls (ms) -%''
+	order by 1, 2
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 	
+
+
+
+		--send the email
+		EXEC msdb.dbo.sp_send_dbmail
+			@profile_name = @profile,
+			@recipients = @recipients,
+			@subject = @subject,
+			@body = @tableHTML,
+			@body_format = ''HTML'',
+			@query_no_truncate = 1,
+			@attach_query_result_as_file = 0;
+	
+
+--Cleanup the summary table of any old rows that had already been emailed, based on the retention setting
+DELETE FROM master.dbo.[RDX_Stats_Summary] where Loadtime < DATEADD(DAY, @retention, GETDATE())
+		
+GO
+
+drop table #report
+drop table #report_h
+
+go', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Cleanup raw data tables]    Script Date: 2/15/2017 1:19:47 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Cleanup raw data tables', 
+		@step_id=5, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'truncate table [RDX_IO_Latency] 
+truncate table [RDX_CPU_Stats] 
+truncate table [RDX_MEM_Stats] 
+truncate table [RDX_PLE_Stats] 
+
+
+truncate table [RDX_IO_Stats_2]
+truncate table [RDX_IO_Stats]
+truncate table [RDX_Wait_Stats] 
+truncate table [RDX_lock_wait_Stats]
+
+truncate table [RDX_PS_stats]
+', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'Daily - 11:55PM', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20170210, 
+		@active_end_date=99991231, 
+		@active_start_time=235500, 
+		@active_end_time=235959, 
+		@schedule_uid=N'539cbebc-3cf7-49ae-ae52-9712cdd1bd6f'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+

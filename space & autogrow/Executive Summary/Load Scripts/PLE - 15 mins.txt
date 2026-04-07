@@ -1,0 +1,8 @@
+insert into [RDX_PLE_Stats]
+SELECT cntr_value AS [Page Life Expectancy],
+GETDATE() as EventTime,
+DATEPART(dd, GETDATE()) as EventTime_Day,
+DATEPART(hh, GETDATE()) as EventTime_Hour
+FROM sys.dm_os_performance_counters WITH (NOLOCK)
+WHERE [object_name] LIKE N'%Buffer Node%' -- Handles named instances
+AND counter_name = N'Page life expectancy' OPTION (RECOMPILE);

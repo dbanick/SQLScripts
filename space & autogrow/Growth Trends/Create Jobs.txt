@@ -1,0 +1,714 @@
+USE [msdb]
+GO
+
+/****** Object:  Job [_RDX_Collect_Growth_Info]    Script Date: 2/15/2017 1:24:07 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Data Collector]    Script Date: 2/15/2017 1:24:07 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Data Collector' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Data Collector'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'_RDX_Collect_Growth_Info', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'Collects Drive space stats and DB file stats to be used for growth trending analysis', 
+		@category_name=N'Data Collector', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Collect Drive info]    Script Date: 2/15/2017 1:24:07 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Collect Drive info', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=3, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'CmdExec', 
+		@command=N'powershell.exe  -ExecutionPolicy ByPass -File "C:\RDX\Powershell\SQL Space Trends\Drive_Trends_wmi.ps1"', 
+		@flags=0, 
+		@proxy_name=N'RDXsupport_proxy'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Collect DB Info]    Script Date: 2/15/2017 1:24:07 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Collect DB Info', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'CmdExec', 
+		@command=N'powershell.exe  -ExecutionPolicy ByPass -File "C:\RDX\Powershell\SQL Space Trends\Database_Trends.ps1"', 
+		@flags=0, 
+		@proxy_name=N'RDXsupport_proxy'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'_RDX_Daily_Growth_Collection', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20170127, 
+		@active_end_date=99991231, 
+		@active_start_time=10000, 
+		@active_end_time=235959, 
+		@schedule_uid=N'1060fb05-01f6-41c0-9939-5a80ca22b512'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+/****** Object:  Job [_RDX_Monthly_Growth_Reports]    Script Date: 2/15/2017 1:24:07 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Data Collector]    Script Date: 2/15/2017 1:24:07 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Data Collector' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Data Collector'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'_RDX_Monthly_Growth_Reports', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'Data Collector', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Monthly Drive Report]    Script Date: 2/15/2017 1:24:07 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Monthly Drive Report', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'DECLARE @html nvarchar(max);
+DECLARE @subject nvarchar(200);
+DECLARE @recipients nvarchar(2000);
+DECLARE @profile nvarchar(200);
+DECLARE @historyCheck int;
+DECLARE @retention int;
+DECLARE @errors int;
+
+--You can set the email to use the addresses from an Operator, or explicitly define the email address
+SET @recipients = (select email_address from msdb.dbo.sysoperators where name = ''Server_Reports'') --uses the Server_Reports operator
+--SET @recipients = ''npatti@rdx.com''; --seperate emails with semicolon
+
+SET @subject = ''Monthly Drive Growth Trends''; --subject of email
+SET @profile = ''PS_Reports''; --mail profile to use
+SET @retention = -365 -- how many days of history to keep
+
+
+
+create table #driveReport (
+Servername sysname,
+Drive char(3),
+CurrentFreeSpace float,
+CurrentSize float,
+SpaceUsed float,
+PercentFree float,
+GrowthRate_in_Past_week float,
+ProjectedNeedsIn12Months float
+)
+
+DECLARE @srvname sysname
+DECLARE @drivename char(3)
+DECLARE drivecur CURSOR LOCAL FAST_FORWARD FOR SELECT distinct [ServerName], [Drive] from [dbo].[RDX_Drive_Growth_Stats]
+
+OPEN drivecur
+
+	FETCH NEXT FROM drivecur
+	INTO @srvname, @drivename
+
+	WHILE @@FETCH_STATUS=0
+		  BEGIN
+				INSERT INTO #driveReport
+				SELECT a.ServerName, a.Drive, a.FreeSpaceInGB, a.TotalSpaceInGB, (a.TotalSpaceInGB - a.FreeSpaceInGB) as SpaceUsed, 
+				(a.FreeSpaceInGB/a.TotalSpaceInGB)*100 as PercentFree, 
+				(a.TotalSpaceInGB - a.FreeSpaceInGB) - (b.TotalSpaceInGB - b.FreeSpaceInGB) as GrowthRate_in_Past_week,
+				CASE WHEN
+						((((a.TotalSpaceInGB - a.FreeSpaceInGB) - (b.TotalSpaceInGB - b.FreeSpaceInGB)) * 52) + (a.TotalSpaceInGB - a.FreeSpaceInGB) ) < 0
+					THEN 0
+				ELSE (((a.TotalSpaceInGB - a.FreeSpaceInGB) - (b.TotalSpaceInGB - b.FreeSpaceInGB)) * 52) + (a.TotalSpaceInGB - a.FreeSpaceInGB) 
+				END as ProjectedNeedsIn12Months
+				FROM [dbo].[RDX_Drive_Growth_Stats] a, [dbo].[RDX_Drive_Growth_Stats] b
+				where a.servername = @srvname and a.Drive = @drivename 
+				and b.servername = @srvname and b.Drive = @drivename
+				and b.RunDate = (SELECT TOP 1 RunDate FROM [dbo].[RDX_Drive_Growth_Stats] where servername = @srvname and Drive = @drivename and Rundate > GETDATE()-30 order by RunDate asc)
+				and a.RunDate = (SELECT TOP 1 RunDate FROM [dbo].[RDX_Drive_Growth_Stats] where servername = @srvname and Drive = @drivename order by RunDate desc)
+
+
+FETCH NEXT FROM drivecur
+		  INTO @srvname, @drivename
+		  END
+
+		  CLOSE drivecur
+		  DEALLOCATE drivecur
+
+--build HTML report
+declare @tableHTML nvarchar(max); 
+
+--first, we will display the summary information	
+set @tableHTML = 
+	N''<h2>Drive Growth Report </h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>[Servername]</b></p></th> 
+	<th><p align="center"><b>[Drive]</b></p></th> 
+	<th><p align="center"><b>[CurrentFreeSpace]</b></p></th> 
+	<th><p align="center"><b>[CurrentSize]</b></p></th>
+	<th><p align="center"><b>[SpaceUsed]</b></p></th>
+	<th><p align="center"><b>[PercentFree]</b></p></th>
+	<th><p align="center"><b>[GrowthRate_in_Past_week]</b></p></th>
+	<th><p align="center"><b>[ProjectedNeedsIn12Months]</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select 
+	td = servername,'' '', 
+	td = drive,'' '',
+	td = cast(CurrentFreeSpace as dec(18,2)),'' '',
+	td = cast(CurrentSize as dec(18,2)),'' '',
+	td = cast(SpaceUsed as dec(18,2)),'' '',
+	td = cast(PercentFree as dec(18,2)),'' '',
+	td = cast(GrowthRate_in_Past_week as dec(18,2)),'' '',
+	td = cast(ProjectedNeedsIn12Months as dec(18,2)),'' ''
+	from #driveReport
+	order by servername, drive
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 
+
+	--select @tableHTML
+
+		--send the email
+		EXEC msdb.dbo.sp_send_dbmail
+			@profile_name = @profile,
+			@recipients = @recipients,
+			@subject = @subject,
+			@body = @tableHTML,
+			@body_format = ''HTML'',
+			@query_no_truncate = 1,
+			@attach_query_result_as_file = 0;
+		
+
+	
+--Cleanup the notification table of any old rows that had already been emailed, based on the retention setting
+DELETE FROM master.dbo.[RDX_Drive_Growth_Stats] where RunDate < DATEADD(DAY, @retention, GETDATE())
+
+GO
+drop table #driveReport', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Monthly DB Growth Report]    Script Date: 2/15/2017 1:24:07 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Monthly DB Growth Report', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'DECLARE @html nvarchar(max);
+DECLARE @subject nvarchar(200);
+DECLARE @recipients nvarchar(2000);
+DECLARE @profile nvarchar(200);
+DECLARE @historyCheck int;
+DECLARE @retention int;
+DECLARE @errors int;
+
+--You can set the email to use the addresses from an Operator, or explicitly define the email address
+SET @recipients = (select email_address from msdb.dbo.sysoperators where name = ''Server_Reports'') --uses the Server_Reports operator
+--SET @recipients = ''npatti@rdx.com''; --seperate emails with semicolon
+
+SET @subject = ''Monthly Database Growth Trends''; --subject of email
+SET @profile = ''PS_Reports''; --mail profile to use
+SET @retention = -365 -- how many days of history to keep
+
+
+
+create table #DBReport (
+Servername sysname,
+DBName sysname,
+Name sysname,
+FileName nchar(520),
+FileID int,
+TotalSize dec(18,2),
+TotalSizeLastWeek dec(18,2),
+FreeSpace dec(18,2),
+UsedSpace dec(18,2),
+PercentFree dec(18,2),
+GrowthRate dec(18,2)
+)
+
+
+
+DECLARE @srvname sysname
+DECLARE @dbname sysname
+DECLARE @fname sysname
+DECLARE @drive char(3)
+DECLARE DBcur CURSOR LOCAL FAST_FORWARD FOR SELECT distinct [ServerName], [DBName], [Name] from [dbo].[RDX_DB_Growth_Stats]
+OPEN DBcur
+	FETCH NEXT FROM DBcur
+	INTO @srvname, @dbname, @fname
+	WHILE @@FETCH_STATUS=0
+		  BEGIN
+				INSERT INTO #DBReport
+				SELECT a.ServerName, a.DBName, a.Name, a.FileName, a.FileID, a.TotalSize/1024,  b.TotalSize/1024 as TotalSizeLastWeek, a.FreeSpace/1024, a.UsedSpace/1024,
+				(a.FreeSpace/a.TotalSize)*100 as PercentFree, 
+				(a.TotalSize - b.TotalSize)/1024 as GrowthRate
+				FROM [dbo].[RDX_DB_Growth_Stats] a, [dbo].[RDX_DB_Growth_Stats] b
+				where a.servername = @srvname and a.DBName = @dbname and a.name = @fname
+				and b.servername = @srvname and b.DBName = @dbname and b.name = @fname
+				and b.RunDate = (SELECT TOP 1 RunDate FROM [dbo].[RDX_DB_Growth_Stats] where servername = @srvname and DBName = @dbname  and [name] = @fname and Rundate > GETDATE()-30 order by RunDate asc)
+				and a.RunDate = (SELECT TOP 1 RunDate FROM [dbo].[RDX_DB_Growth_Stats] where servername = @srvname and DBName = @dbname  and [name] = @fname order by RunDate desc)
+
+
+FETCH NEXT FROM DBcur
+INTO @srvname, @dbname, @fname
+END
+
+CLOSE DBcur
+DEALLOCATE DBcur
+
+--build HTML report
+declare @tableHTML nvarchar(max); 
+
+--first, we will display the summary information	
+set @tableHTML = 
+	N''<h2>Database Growth Details</h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>[Servername]</b></p></th> 
+	<th><p align="center"><b>[Database]</b></p></th> 
+	<th><p align="center"><b>[Database File]</b></p></th>
+	<th><p align="center"><b>[FileName]</b></p></th>
+	<th><p align="center"><b>[FileID]</b></p></th>
+	<th><p align="center"><b>[Total Size]</b></p></th>
+	<th><p align="center"><b>[Total Size Last Week]</b></p></th>
+	<th><p align="center"><b>[Free Space]</b></p></th>
+	<th><p align="center"><b>[Used Space]</b></p></th>
+	<th><p align="center"><b>[Percent Free]</b></p></th>
+	<th><p align="center"><b>[Growth Rate]</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select  
+	td = ServerName,'' '', 
+	td = DBName,'' '', 
+	td = Name,'' '', 
+	td = FileName,'' '', 
+	td = FileID,'' '', 
+	td = TotalSize,'' '', 
+	td = TotalSizeLastWeek,'' '', 
+	td = FreeSpace,'' '', 
+	td = UsedSpace,'' '', 
+	td = PercentFree,'' '',
+	td = GrowthRate,'' ''
+	from #DBReport order by servername, growthRate desc, DBName
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 
+
+	--select * from #DBReport
+	--select * from #DBSummary
+
+	--select @tableHTML
+
+		--send the email
+		EXEC msdb.dbo.sp_send_dbmail
+			@profile_name = @profile,
+			@recipients = @recipients,
+			@subject = @subject,
+			@body = @tableHTML,
+			@body_format = ''HTML'',
+			@query_no_truncate = 1,
+			@attach_query_result_as_file = 0;
+		
+
+	
+--Cleanup the notification table of any old rows that had already been emailed, based on the retention setting
+DELETE FROM master.dbo.[RDX_DB_Growth_Stats] where RunDate < DATEADD(DAY, @retention, GETDATE())
+
+GO
+drop table #DBReport
+
+', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'Monthly Report', 
+		@enabled=1, 
+		@freq_type=16, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=1, 
+		@active_start_date=20170208, 
+		@active_end_date=99991231, 
+		@active_start_time=60000, 
+		@active_end_time=235959, 
+		@schedule_uid=N'b422cd19-523f-42ad-a035-6ee7b9a29456'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+/****** Object:  Job [_RDX_Weekly_Growth_Reports]    Script Date: 2/15/2017 1:24:07 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Data Collector]    Script Date: 2/15/2017 1:24:07 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Data Collector' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Data Collector'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'_RDX_Weekly_Growth_Reports', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'Sends an email each month showing drive and database growth trends', 
+		@category_name=N'Data Collector', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Weekly Drive Growth Report]    Script Date: 2/15/2017 1:24:07 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Weekly Drive Growth Report', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'DECLARE @html nvarchar(max);
+DECLARE @subject nvarchar(200);
+DECLARE @recipients nvarchar(2000);
+DECLARE @profile nvarchar(200);
+DECLARE @historyCheck int;
+DECLARE @retention int;
+DECLARE @errors int;
+
+--You can set the email to use the addresses from an Operator, or explicitly define the email address
+SET @recipients = (select email_address from msdb.dbo.sysoperators where name = ''Server_Reports'') --uses the Server_Reports operator
+--SET @recipients = ''npatti@rdx.com''; --seperate emails with semicolon
+
+SET @subject = ''Weekly Drive Growth Trends''; --subject of email
+SET @profile = ''PS_Reports''; --mail profile to use
+SET @retention = -365 -- how many days of history to keep
+
+
+
+create table #driveReport (
+Servername sysname,
+Drive char(3),
+CurrentFreeSpace float,
+CurrentSize float,
+SpaceUsed float,
+PercentFree float,
+GrowthRate_in_Past_week float,
+ProjectedNeedsIn12Months float
+)
+
+DECLARE @srvname sysname
+DECLARE @drivename char(3)
+DECLARE drivecur CURSOR LOCAL FAST_FORWARD FOR SELECT distinct [ServerName], [Drive] from [dbo].[RDX_Drive_Growth_Stats]
+
+OPEN drivecur
+
+	FETCH NEXT FROM drivecur
+	INTO @srvname, @drivename
+
+	WHILE @@FETCH_STATUS=0
+		  BEGIN
+				INSERT INTO #driveReport
+				SELECT a.ServerName, a.Drive, a.FreeSpaceInGB, a.TotalSpaceInGB, (a.TotalSpaceInGB - a.FreeSpaceInGB) as SpaceUsed, 
+				(a.FreeSpaceInGB/a.TotalSpaceInGB)*100 as PercentFree, 
+				(a.TotalSpaceInGB - a.FreeSpaceInGB) - (b.TotalSpaceInGB - b.FreeSpaceInGB) as GrowthRate_in_Past_week,
+				CASE WHEN
+						((((a.TotalSpaceInGB - a.FreeSpaceInGB) - (b.TotalSpaceInGB - b.FreeSpaceInGB)) * 52) + (a.TotalSpaceInGB - a.FreeSpaceInGB) ) < 0
+					THEN 0
+				ELSE (((a.TotalSpaceInGB - a.FreeSpaceInGB) - (b.TotalSpaceInGB - b.FreeSpaceInGB)) * 52) + (a.TotalSpaceInGB - a.FreeSpaceInGB) 
+				END as ProjectedNeedsIn12Months
+				FROM [dbo].[RDX_Drive_Growth_Stats] a, [dbo].[RDX_Drive_Growth_Stats] b
+				where a.servername = @srvname and a.Drive = @drivename 
+				and b.servername = @srvname and b.Drive = @drivename
+				and b.RunDate = (SELECT TOP 1 RunDate FROM [dbo].[RDX_Drive_Growth_Stats] where servername = @srvname and Drive = @drivename and Rundate > GETDATE()-7 order by RunDate asc)
+				and a.RunDate = (SELECT TOP 1 RunDate FROM [dbo].[RDX_Drive_Growth_Stats] where servername = @srvname and Drive = @drivename order by RunDate desc)
+
+
+FETCH NEXT FROM drivecur
+		  INTO @srvname, @drivename
+		  END
+
+		  CLOSE drivecur
+		  DEALLOCATE drivecur
+
+--build HTML report
+declare @tableHTML nvarchar(max); 
+
+--first, we will display the summary information	
+set @tableHTML = 
+	N''<h2>Drive Growth Report </h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>[Servername]</b></p></th> 
+	<th><p align="center"><b>[Drive]</b></p></th> 
+	<th><p align="center"><b>[CurrentFreeSpace]</b></p></th> 
+	<th><p align="center"><b>[CurrentSize]</b></p></th>
+	<th><p align="center"><b>[SpaceUsed]</b></p></th>
+	<th><p align="center"><b>[PercentFree]</b></p></th>
+	<th><p align="center"><b>[GrowthRate_in_Past_week]</b></p></th>
+	<th><p align="center"><b>[ProjectedNeedsIn12Months]</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select 
+	td = servername,'' '', 
+	td = drive,'' '',
+	td = cast(CurrentFreeSpace as dec(18,2)),'' '',
+	td = cast(CurrentSize as dec(18,2)),'' '',
+	td = cast(SpaceUsed as dec(18,2)),'' '',
+	td = cast(PercentFree as dec(18,2)),'' '',
+	td = cast(GrowthRate_in_Past_week as dec(18,2)),'' '',
+	td = cast(ProjectedNeedsIn12Months as dec(18,2)),'' ''
+	from #driveReport
+	order by servername, drive
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 
+
+	--select @tableHTML
+
+		--send the email
+		EXEC msdb.dbo.sp_send_dbmail
+			@profile_name = @profile,
+			@recipients = @recipients,
+			@subject = @subject,
+			@body = @tableHTML,
+			@body_format = ''HTML'',
+			@query_no_truncate = 1,
+			@attach_query_result_as_file = 0;
+		
+
+	
+--Cleanup the notification table of any old rows that had already been emailed, based on the retention setting
+DELETE FROM master.dbo.[RDX_Drive_Growth_Stats] where RunDate < DATEADD(DAY, @retention, GETDATE())
+
+GO
+drop table #driveReport', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Weekly Report DB Growth]    Script Date: 2/15/2017 1:24:07 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Weekly Report DB Growth', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'DECLARE @html nvarchar(max);
+DECLARE @subject nvarchar(200);
+DECLARE @recipients nvarchar(2000);
+DECLARE @profile nvarchar(200);
+DECLARE @historyCheck int;
+DECLARE @retention int;
+DECLARE @errors int;
+
+--You can set the email to use the addresses from an Operator, or explicitly define the email address
+SET @recipients = (select email_address from msdb.dbo.sysoperators where name = ''Server_Reports'') --uses the Server_Reports operator
+--SET @recipients = ''npatti@rdx.com''; --seperate emails with semicolon
+
+SET @subject = ''Weekly Database Growth Trends''; --subject of email
+SET @profile = ''PS_Reports''; --mail profile to use
+SET @retention = -365 -- how many days of history to keep
+
+
+
+create table #DBReport (
+Servername sysname,
+DBName sysname,
+Name sysname,
+FileName nchar(520),
+FileID int,
+TotalSize dec(18,2),
+TotalSizeLastWeek dec(18,2),
+FreeSpace dec(18,2),
+UsedSpace dec(18,2),
+PercentFree dec(18,2),
+GrowthRate dec(18,2)
+)
+
+
+
+DECLARE @srvname sysname
+DECLARE @dbname sysname
+DECLARE @fname sysname
+DECLARE @drive char(3)
+DECLARE DBcur CURSOR LOCAL FAST_FORWARD FOR SELECT distinct [ServerName], [DBName], [Name] from [dbo].[RDX_DB_Growth_Stats]
+OPEN DBcur
+	FETCH NEXT FROM DBcur
+	INTO @srvname, @dbname, @fname
+	WHILE @@FETCH_STATUS=0
+		  BEGIN
+				INSERT INTO #DBReport
+				SELECT a.ServerName, a.DBName, a.Name, a.FileName, a.FileID, a.TotalSize/1024,  b.TotalSize/1024 as TotalSizeLastWeek, a.FreeSpace/1024, a.UsedSpace/1024,
+				(a.FreeSpace/a.TotalSize)*100 as PercentFree, 
+				(a.TotalSize - b.TotalSize)/1024 as GrowthRate
+				FROM [dbo].[RDX_DB_Growth_Stats] a, [dbo].[RDX_DB_Growth_Stats] b
+				where a.servername = @srvname and a.DBName = @dbname and a.name = @fname
+				and b.servername = @srvname and b.DBName = @dbname and b.name = @fname
+				and b.RunDate = (SELECT TOP 1 RunDate FROM [dbo].[RDX_DB_Growth_Stats] where servername = @srvname and DBName = @dbname  and [name] = @fname and Rundate > GETDATE()-7 order by RunDate asc)
+				and a.RunDate = (SELECT TOP 1 RunDate FROM [dbo].[RDX_DB_Growth_Stats] where servername = @srvname and DBName = @dbname  and [name] = @fname order by RunDate desc)
+
+
+FETCH NEXT FROM DBcur
+INTO @srvname, @dbname, @fname
+END
+
+CLOSE DBcur
+DEALLOCATE DBcur
+
+--build HTML report
+declare @tableHTML nvarchar(max); 
+
+--first, we will display the summary information	
+set @tableHTML = 
+	N''<h2>Database Growth Details</h2>'' + 
+	N''<table border="1">'' + 
+	N''<tr><th><p align="center"><b>[Servername]</b></p></th> 
+	<th><p align="center"><b>[Database]</b></p></th> 
+	<th><p align="center"><b>[Database File]</b></p></th>
+	<th><p align="center"><b>[FileName]</b></p></th>
+	<th><p align="center"><b>[FileID]</b></p></th>
+	<th><p align="center"><b>[Total Size]</b></p></th>
+	<th><p align="center"><b>[Total Size Last Week]</b></p></th>
+	<th><p align="center"><b>[Free Space]</b></p></th>
+	<th><p align="center"><b>[Used Space]</b></p></th>
+	<th><p align="center"><b>[Percent Free]</b></p></th>
+	<th><p align="center"><b>[Growth Rate]</b></p></th>
+	</tr>'' + 
+	CAST ((    
+	select  
+	td = ServerName,'' '', 
+	td = DBName,'' '', 
+	td = Name,'' '', 
+	td = FileName,'' '', 
+	td = FileID,'' '', 
+	td = TotalSize,'' '', 
+	td = TotalSizeLastWeek,'' '', 
+	td = FreeSpace,'' '', 
+	td = UsedSpace,'' '', 
+	td = PercentFree,'' '',
+	td = GrowthRate,'' ''
+	from #DBReport order by servername, growthRate desc, DBName
+	for xml path(''tr''), type  
+	) as nvarchar(max)) + 
+	N''</table>'' ; 
+
+	--select * from #DBReport
+	--select * from #DBSummary
+
+	--select @tableHTML
+
+		--send the email
+		EXEC msdb.dbo.sp_send_dbmail
+			@profile_name = @profile,
+			@recipients = @recipients,
+			@subject = @subject,
+			@body = @tableHTML,
+			@body_format = ''HTML'',
+			@query_no_truncate = 1,
+			@attach_query_result_as_file = 0;
+		
+
+	
+--Cleanup the notification table of any old rows that had already been emailed, based on the retention setting
+DELETE FROM master.dbo.[RDX_DB_Growth_Stats] where RunDate < DATEADD(DAY, @retention, GETDATE())
+
+GO
+drop table #DBReport
+
+', 
+		@database_name=N'master', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'_RDX_Monthly_Reports', 
+		@enabled=1, 
+		@freq_type=8, 
+		@freq_interval=4, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=1, 
+		@active_start_date=20170130, 
+		@active_end_date=99991231, 
+		@active_start_time=60000, 
+		@active_end_time=235959, 
+		@schedule_uid=N'4f842310-2dc6-49e4-8ba9-77d9f18530d4'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+

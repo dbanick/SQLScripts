@@ -1,0 +1,239 @@
+USE [master]
+GO
+
+/****** Object:  Table [dbo].[RDX_CPU_Stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_CPU_Stats](
+	[SQL_Utilization] [int] NULL,
+	[System_Idle] [int] NULL,
+	[Other_Process_Utilization] [int] NULL,
+	[EventTime] [datetime] NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL
+) ON [PRIMARY]
+
+GO
+
+
+SET ANSI_PADDING OFF
+GO
+
+/****** Object:  Table [dbo].[RDX_IO_latency]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_IO_latency](
+	[Drive] [nvarchar](2) NULL,
+	[Volume Mount Point] [nvarchar](256) NULL,
+	[Read Latency] [bigint] NULL,
+	[Write Latency] [bigint] NULL,
+	[Overall Latency] [bigint] NULL,
+	[Avg Bytes/Read] [bigint] NULL,
+	[Avg Bytes/Write] [bigint] NULL,
+	[Avg Bytes/Transfer] [bigint] NULL,
+	[EventTime] [datetime] NOT NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL
+) ON [PRIMARY]
+
+GO
+
+/****** Object:  Table [dbo].[RDX_IO_Stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_IO_Stats](
+	[Database Name] [nvarchar](128) NULL,
+	[Logical Name] [sysname] NOT NULL,
+	[file_id] [smallint] NOT NULL,
+	[type_desc] [nvarchar](60) NULL,
+	[Physical Name] [nvarchar](260) NOT NULL,
+	[Size on Disk (MB)] [decimal](10, 2) NULL,
+	[num_of_reads] [bigint] NOT NULL,
+	[num_of_writes] [bigint] NOT NULL,
+	[io_stall_read_ms] [bigint] NOT NULL,
+	[io_stall_write_ms] [bigint] NOT NULL,
+	[IO Stall Reads Pct] [decimal](10, 1) NULL,
+	[IO Stall Writes Pct] [decimal](10, 1) NULL,
+	[Writes + Reads] [bigint] NULL,
+	[MB Read] [decimal](10, 2) NULL,
+	[MB Written] [decimal](10, 2) NULL,
+	[EventTime] [datetime] NOT NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL
+) ON [PRIMARY]
+
+GO
+
+/****** Object:  Table [dbo].[RDX_IO_stats_2]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_IO_stats_2](
+	[Database Name] [nvarchar](128) NULL,
+	[avg_read_stall_ms] [numeric](10, 1) NULL,
+	[avg_write_stall_ms] [numeric](10, 1) NULL,
+	[avg_io_stall_ms] [numeric](10, 1) NULL,
+	[physical_name] [nvarchar](260) NOT NULL,
+	[type_desc] [nvarchar](60) NULL,
+	[io_stall_read_ms] [bigint] NOT NULL,
+	[num_of_reads] [bigint] NOT NULL,
+	[io_stall_write_ms] [bigint] NOT NULL,
+	[num_of_writes] [bigint] NOT NULL,
+	[io_stalls] [bigint] NULL,
+	[total_io] [bigint] NULL,
+	[EventTime] [datetime] NOT NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL
+) ON [PRIMARY]
+
+GO
+
+/****** Object:  Table [dbo].[RDX_lock_wait_stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_lock_wait_stats](
+	[table_name] [sysname] NOT NULL,
+	[index_name] [sysname] NULL,
+	[index_id] [int] NOT NULL,
+	[partition_number] [int] NOT NULL,
+	[total_row_lock_waits] [bigint] NULL,
+	[total_row_lock_wait_in_ms] [bigint] NULL,
+	[total_page_lock_waits] [bigint] NULL,
+	[total_page_lock_wait_in_ms] [bigint] NULL,
+	[total_page_io_latch_lock_waits] [bigint] NULL,
+	[total_page_io_latch_lock_wait_in_ms] [bigint] NULL,
+	[total_lock_wait_in_ms] [bigint] NULL,
+	[EventTime] [datetime] NOT NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL,
+	[database_name] [sysname] NULL
+) ON [PRIMARY]
+
+GO
+
+/****** Object:  Table [dbo].[RDX_MEM_Stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_MEM_Stats](
+	[Physical Memory (MB)] [bigint] NULL,
+	[Available Memory (MB)] [bigint] NULL,
+	[Total Page File (MB)] [bigint] NULL,
+	[Available Page File (MB)] [bigint] NULL,
+	[System Cache (MB)] [bigint] NULL,
+	[System Memory State] [nvarchar](256) NOT NULL,
+	[EventTime] [datetime] NOT NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL
+) ON [PRIMARY]
+
+GO
+
+/****** Object:  Table [dbo].[RDX_PLE_Stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_PLE_Stats](
+	[PLE] [int] NULL,
+	[EventTime] [datetime] NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL
+) ON [PRIMARY]
+
+GO
+
+/****** Object:  Table [dbo].[RDX_PS_stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+SET ANSI_PADDING ON
+GO
+
+CREATE TABLE [dbo].[RDX_PS_stats](
+	[Metric] [varchar](256) NULL,
+	[value] [decimal](18, 2) NULL,
+	[EventTime] [datetime] NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_hour] [int] NULL
+) ON [PRIMARY]
+
+GO
+
+SET ANSI_PADDING OFF
+GO
+
+/****** Object:  Table [dbo].[RDX_Stats_Summary]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+SET ANSI_PADDING ON
+GO
+
+CREATE TABLE [dbo].[RDX_Stats_Summary](
+	[id] [int] IDENTITY(1,1) NOT NULL,
+	[Metric] [varchar](256) NULL,
+	[MetricValue_Total] [decimal](18, 2) NULL,
+	[MetricValue_AVG] [decimal](18, 2) NULL,
+	[MetricValue_Peak] [decimal](18, 2) NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL,
+	[LoadTime] [datetime] NULL DEFAULT (getdate())
+) ON [PRIMARY]
+
+GO
+
+SET ANSI_PADDING OFF
+GO
+
+/****** Object:  Table [dbo].[RDX_Wait_Stats]    Script Date: 2/15/2017 1:20:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[RDX_Wait_Stats](
+	[WaitType] [nvarchar](60) NULL,
+	[Wait_Sec] [decimal](16, 2) NULL,
+	[Resource_Sec] [decimal](16, 2) NULL,
+	[Signal_Sec] [decimal](16, 2) NULL,
+	[Wait Count] [bigint] NULL,
+	[EventTime] [datetime] NOT NULL,
+	[EventTime_Day] [int] NULL,
+	[EventTime_Hour] [int] NULL
+) ON [PRIMARY]
+
+GO
+
+

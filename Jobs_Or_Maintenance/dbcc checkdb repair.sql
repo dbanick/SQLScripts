@@ -1,0 +1,14 @@
+--Commands are to be ran separately
+
+--First command to repair the consistency errors:
+ALTER DATABASE [DBNAME] SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+GO
+DBCC CHECKDB ('DBNAME', REPAIR_ALLOW_DATA_LOSS/REPAIR_FAST/REPAIR_REBUILD)
+GO
+
+
+--Second command to verify there are no more issues:
+ALTER DATABASE [DBNAME] SET MULTI_USER WITH ROLLBACK IMMEDIATE
+GO
+DBCC CHECKDB ('DBNAME') WITH NO_INFOMSGS
+GO

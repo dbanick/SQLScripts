@@ -1,0 +1,4 @@
+Backup-DbaDatabase -SqlInstance worapmssps02 -ExcludeDatabase master,model,msdb,tempdb -Path \\WORAPMSSDB01C\Migration -Type Full -CompressBackup
+
+
+Restore-DbaDatabase -SqlInstance WORAPMSSDB01C -Path "\\WORAPMSSDB01C\Migration\" -DestinationDataDirectory E:\Data -DestinationLogDirectory L:\Logs -WithReplace

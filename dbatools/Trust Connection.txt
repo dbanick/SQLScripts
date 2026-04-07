@@ -1,0 +1,4 @@
+#WARNING: Failure | The certificate chain was issued by an authority that is not trusted
+
+Set-DbatoolsConfig -FullName sql.connection.trustcert -Value $true -Register
+Set-DbatoolsConfig -FullName sql.connection.encrypt -Value $false -Register 

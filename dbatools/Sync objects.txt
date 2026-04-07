@@ -1,0 +1,27 @@
+Sync objects quickly between servers with dbatools (everything executed in PS)
+
+Install-Module dbatools
+
+#If you receive the following error when running a command, you can run the below commands to work around:
+
+WARNING: Failure | The certificate chain was issued by an authority that is not trusted
+
+Set-DbatoolsConfig -FullName sql.connection.trustcert -Value $true -Register
+Set-DbatoolsConfig -FullName sql.connection.encrypt -Value $false -Register 
+
+#Use -WhatIf for check for what will run, recommended to run any commands with this switch first to verify
+#Use -Force to drop and recreate
+
+
+Command examples:
+
+Copy-DbaLogin -Source src_server -Destination dest_server -ExcludeLogin "your login"
+
+Copy-DbaLinkedServer -Source src_server -Destination dest_server
+
+Copy-DbaAgentOperator -Source src_server -Destination dest_server
+
+Copy-DbaAgentJob -Source src_server -Destination dest_server
+
+#If you need to filter jobs, you can use something like this:
+Get-DbaAgentJob -SqlInstance src_server | Where-Object Category -ne "Log Shipping" | Copy-DbaAgentJob -Destination dest_server -ExcludeJob "syspolicy_purge_history" -DisableOnDestination

@@ -1,0 +1,1 @@
+EXECUTE msdb.dbo.rds_drop_database N'your-database-name' 

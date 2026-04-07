@@ -1,0 +1,55 @@
+# Created a new custom layer pyodbc-layer.zip > Add Custom Layer (dropdown select pyodbc previously created)
+# Secrets manager - added login
+# Lambda function > configuration > permission > role name > add permissions > in line policy > create policy to
+# Secrets Manager > GetSecretValue to ARN of secret
+# Secrets Manager has connection string info, add to Lambda function code
+#
+# Below example takes input parameter of servername and SPID, pulls username and password from Secret Manager
+# Connects to server to kill supplied SPID
+
+import boto3
+from botocore.exceptions import ClientError
+import json
+import pyodbc
+
+def lambda_handler(event, context):
+    
+    #def get_secret():
+
+    secret_name = "sql/svc_lambda"
+    region_name = "us-west-2"
+
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+
+    try:
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+    except ClientError as e:
+        # For a list of exceptions thrown, see
+        # https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+        raise e
+
+    secret = get_secret_value_response['SecretString']
+    j=json.loads(secret)
+    username = j["username"]
+    password = j["password"]
+
+    # TODO implement
+    strServer = event["host"]
+    strUsername = username
+    strPassword = password
+    intSPID = event["sessionId"]
+    strCommand = "KILL " + intSPID
+    cnxn1 = pyodbc.connect("driver={ODBC Driver 17 for SQL Server};server="+strServer+";TrustServerCertificate=yes;database=master;uid="+strUsername+";pwd="+strPassword,autocommit=True)
+    cursor1 = cnxn1.cursor()
+    cursor1.execute(strCommand) 
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Killed ' + str(intSPID)) #json.dumps({"msg": "killed", success: true})
+    }

@@ -1,0 +1,3 @@
+Copy-DbaLogin -Source src_server -Destination dest_server -ExcludeLogin "your login"
+#Use -WhatIf to verify
+#Use -Force to drop and recreate

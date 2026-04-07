@@ -1,0 +1,6 @@
+Copy-DbaAgentOperator -Source src_server -Destination dest_server
+
+
+Copy-DbaAgentJob -Source src_server -Destination dest_server -ExcludeJob "syspolicy_purge_history" 
+#Use -WhatIf for check of what will run
+#Use -Force to drop and recreate
